@@ -6,6 +6,7 @@ import { xhtmlToSafeMarkdown } from './markdown'
 import { safeOutputName } from './path'
 import { SECURITY_POLICY } from './policy'
 import { assertNoUnsafeXmlMarkup, decodeUtf8 } from './xml'
+import { convertPdf } from './pdf'
 
 const RASTER_TYPES = new Map<string, { extension: string; signature: (bytes: Uint8Array) => boolean }>([
   ['image/png', { extension: 'png', signature: (b) => b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47 }],
@@ -20,13 +21,15 @@ export interface ConversionProgress {
 }
 
 export interface ConversionSummary {
+  readonly format: 'epub' | 'pdf'
   readonly title: string
   readonly author?: string
   readonly language?: string
-  readonly chapters: number
+  readonly units: number
+  readonly unitLabel: 'Kapitel' | 'Seiten'
   readonly assets: number
   readonly inputBytes: number
-  readonly uncompressedBytes: number
+  readonly processedBytes: number
   readonly outputBytes: number
   readonly warnings: readonly string[]
 }
@@ -42,14 +45,14 @@ type ProgressReporter = (progress: ConversionProgress) => void
 
 function reportMarkdown(summary: ConversionSummary, sourceName: string): string {
   const warningList = summary.warnings.length
-    ? summary.warnings.map((warning) => `- ${warning}`).join('\n')
+    ? summary.warnings.map((warning) => `- ${markdownInline(warning)}`).join('\n')
     : '- Keine inhaltlichen Warnungen.'
 
   return `# Sicherheitsbericht
 
 - Quelle: ${markdownInline(sourceName)}
 - Titel: ${markdownInline(summary.title)}
-- Kapitel: ${summary.chapters}
+- Kapitel: ${summary.units}
 - exportierte Rasterbilder: ${summary.assets}
 - Archiveinträge geprüft: ja
 - externe Netzwerkinhalte geladen: nein
@@ -152,7 +155,7 @@ export function convertEpub(
   }
 
   if (chapters.length === 0) {
-    throw new SecurityError('UNSUPPORTED_EPUB', 'Aus dem EPUB konnten keine sicheren Kapitel erzeugt werden.')
+    throw new SecurityError('UNSUPPORTED_DOCUMENT', 'Aus dem EPUB konnten keine sicheren Kapitel erzeugt werden.')
   }
 
   const frontMatter = [
@@ -165,13 +168,15 @@ export function convertEpub(
 
   const uniqueWarnings = [...new Set(warnings)].slice(0, 100)
   const provisionalSummary: ConversionSummary = {
+    format: 'epub',
     title: epub.title,
     ...(epub.author ? { author: epub.author } : {}),
     ...(epub.language ? { language: epub.language } : {}),
-    chapters: chapters.length,
+    units: chapters.length,
+    unitLabel: 'Kapitel',
     assets: assetCount,
     inputBytes: bytes.byteLength,
-    uncompressedBytes: archive.uncompressedBytes,
+    processedBytes: archive.uncompressedBytes,
     outputBytes: 0,
     warnings: uniqueWarnings,
   }
@@ -192,4 +197,34 @@ export function convertEpub(
     summary,
     preview: combined.slice(0, 8_000),
   }
+}
+
+function inputFormat(bytes: Uint8Array): 'epub' | 'pdf' {
+  const isPdf =
+    bytes.byteLength >= 5 &&
+    bytes[0] === 0x25 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x44 &&
+    bytes[3] === 0x46 &&
+    bytes[4] === 0x2d
+  if (isPdf) return 'pdf'
+
+  const isZip = bytes.byteLength >= 4 && bytes[0] === 0x50 && bytes[1] === 0x4b
+  if (isZip) return 'epub'
+
+  throw new SecurityError('INVALID_DOCUMENT', 'Die Datei ist weder ein unterstütztes EPUB noch ein PDF.')
+}
+
+export async function convertDocument(
+  bytes: Uint8Array,
+  sourceName: string,
+  onProgress: ProgressReporter = () => undefined,
+): Promise<ConversionResult> {
+  if (bytes.byteLength > SECURITY_POLICY.maxInputBytes) {
+    throw new SecurityError('LIMIT_EXCEEDED', 'Die Datei überschreitet das Eingabelimit von 80 MB.')
+  }
+
+  return inputFormat(bytes) === 'pdf'
+    ? convertPdf(bytes, sourceName, onProgress)
+    : convertEpub(bytes, sourceName, onProgress)
 }

@@ -7,9 +7,12 @@ export const SECURITY_POLICY = {
   maxXmlBytes: 2 * 1024 * 1024,
   maxXhtmlBytes: 5 * 1024 * 1024,
   maxOutputBytes: 300 * 1024 * 1024,
+  maxPdfPages: 2_000,
+  maxPdfTextBytes: 30 * 1024 * 1024,
+  maxPdfPageTextBytes: 2 * 1024 * 1024,
   maxPathLength: 1_024,
   maxPathSegmentLength: 240,
-  workerTimeoutMs: 20_000,
+  workerTimeoutMs: 30_000,
 } as const
 
 export function formatBytes(bytes: number): string {

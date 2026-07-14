@@ -22,7 +22,7 @@ export function decodeUtf8(bytes: Uint8Array, label: string): string {
   try {
     return new TextDecoder('utf-8', { fatal: true }).decode(bytes)
   } catch {
-    throw new SecurityError('INVALID_EPUB', `${label} ist nicht gültig UTF-8-codiert.`)
+    throw new SecurityError('INVALID_DOCUMENT', `${label} ist nicht gültig UTF-8-codiert.`)
   }
 }
 
@@ -38,7 +38,7 @@ export function parseXmlSecure(bytes: Uint8Array, label: string): unknown {
     const parsed: unknown = parser.parse(xml)
     return parsed
   } catch {
-    throw new SecurityError('INVALID_EPUB', `${label} enthält ungültiges XML.`)
+    throw new SecurityError('INVALID_DOCUMENT', `${label} enthält ungültiges XML.`)
   }
 }
 

@@ -18,7 +18,7 @@ function assertZipSignature(bytes: Uint8Array): void {
     (bytes[3] === 0x04 || bytes[3] === 0x06 || bytes[3] === 0x08)
 
   if (!isZip) {
-    throw new SecurityError('INVALID_EPUB', 'Die Datei ist kein gültiges ZIP-basiertes EPUB.')
+    throw new SecurityError('INVALID_DOCUMENT', 'Die Datei ist kein gültiges ZIP-basiertes EPUB.')
   }
 }
 
@@ -70,7 +70,7 @@ export function openSecureArchive(bytes: Uint8Array): SecureArchive {
     unpacked = unzipSync(bytes, { filter })
   } catch (error) {
     if (error instanceof SecurityError) throw error
-    throw new SecurityError('INVALID_EPUB', 'Das ZIP-Archiv ist beschädigt oder nutzt ein nicht unterstütztes Verfahren.')
+    throw new SecurityError('INVALID_DOCUMENT', 'Das ZIP-Archiv ist beschädigt oder nutzt ein nicht unterstütztes Verfahren.')
   }
 
   const entries = new Map<string, Uint8Array>()

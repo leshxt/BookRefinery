@@ -1,9 +1,9 @@
 export type SecurityErrorCode =
-  | 'INVALID_EPUB'
+  | 'INVALID_DOCUMENT'
   | 'LIMIT_EXCEEDED'
   | 'UNSAFE_ARCHIVE'
   | 'UNSAFE_XML'
-  | 'UNSUPPORTED_EPUB'
+  | 'UNSUPPORTED_DOCUMENT'
   | 'CONVERSION_FAILED'
 
 export class SecurityError extends Error {

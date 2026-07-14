@@ -79,6 +79,10 @@ function selectError(file: File): string | null {
   return null
 }
 
+function fileBadge(file: File): string {
+  return file.name.toLocaleLowerCase('en-US').endsWith('.pdf') ? 'PDF' : 'EP'
+}
+
 export function App() {
   const [state, dispatch] = useReducer(reducer, initialState)
   const controllerRef = useRef<AbortController | null>(null)
@@ -145,34 +149,34 @@ export function App() {
   return (
     <div className="app-shell">
       <header className="topbar">
-        <a className="brand" href="#main" aria-label="EPUB Safe Studio – zum Hauptinhalt">
+        <a className="brand" href="#main" aria-label="Book2Markdown – zum Hauptinhalt">
           <span className="brand-mark"><ShieldIcon /></span>
-          <span>EPUB <strong>Safe Studio</strong></span>
+          <span>Book2<strong>Markdown</strong></span>
         </a>
         <div className="local-badge"><span />100 % lokal</div>
       </header>
 
       <main id="main">
         <section className="hero" aria-labelledby="hero-title">
-          <div className="eyebrow"><ShieldIcon /> Hardened local conversion</div>
-          <h1 id="hero-title">Aus dubiosen EPUBs.<br /><span>Sauberes Markdown.</span></h1>
+          <div className="eyebrow"><ShieldIcon /> EPUB &amp; PDF · hardened local conversion</div>
+          <h1 id="hero-title">Ebooks rein.<br /><span>Markdown raus.</span></h1>
           <p className="hero-copy">
-            Kein Upload, kein Nachladen, kein aktives HTML. Das Buch bleibt auf deinem Gerät und wird in einem
-            isolierten Worker mit harten Sicherheitslimits verarbeitet.
+            EPUBs und PDFs werden lokal in sauberes Markdown verwandelt. Kein Upload, kein Nachladen,
+            kein aktives HTML – nur dein Dokument und ein isolierter Worker mit harten Sicherheitslimits.
           </p>
 
           <div className="trust-row" aria-label="Sicherheitsmerkmale">
             <span><i>01</i> Netzwerk blockiert</span>
-            <span><i>02</i> ZIP-Bomb-Schutz</span>
-            <span><i>03</i> XML-Entities gesperrt</span>
+            <span><i>02</i> Harte Ressourcenlimits</span>
+            <span><i>03</i> Aktive Inhalte gesperrt</span>
           </div>
         </section>
 
-        <section className="studio-card" aria-label="EPUB-Konvertierung">
+        <section className="studio-card" aria-label="Ebook-Konvertierung">
           <div className="studio-heading">
             <div>
               <p className="section-label">Lokale Werkbank</p>
-              <h2>EPUB auswählen</h2>
+              <h2>Ebook auswählen</h2>
             </div>
             <span className="limit-label">max. 80 MB</span>
           </div>
@@ -190,7 +194,7 @@ export function App() {
           >
             <input
               type="file"
-              accept=".epub,application/epub+zip"
+              accept=".epub,.pdf,application/epub+zip,application/pdf"
               disabled={state.kind === 'running'}
               onChange={(event) => {
                 selectFile(event.currentTarget.files?.[0])
@@ -198,13 +202,13 @@ export function App() {
               }}
             />
             <span className="upload-orbit"><UploadIcon /></span>
-            <strong>{state.dragging ? 'Hier loslassen' : 'EPUB hierher ziehen'}</strong>
-            <span>oder klicken, um eine Datei auszuwählen</span>
+            <strong>{state.dragging ? 'Hier loslassen' : 'EPUB oder PDF hierher ziehen'}</strong>
+            <span>oder klicken, um ein Ebook auszuwählen</span>
           </label>
 
           {currentFile && (
             <div className="file-row">
-              <div className="file-icon">EP</div>
+              <div className="file-icon">{fileBadge(currentFile)}</div>
               <div className="file-details">
                 <strong>{currentFile.name}</strong>
                 <span>{formatBytes(currentFile.size)} · bleibt lokal</span>
@@ -250,8 +254,8 @@ export function App() {
                   <div><p className="section-label">Sicher exportiert</p><h3>{state.result.summary.title}</h3></div>
                 </div>
                 <div className="metrics">
-                  <div><strong>{state.result.summary.chapters}</strong><span>Kapitel</span></div>
-                  <div><strong>{state.result.summary.assets}</strong><span>Bilder</span></div>
+                  <div><strong>{state.result.summary.units}</strong><span>{state.result.summary.unitLabel}</span></div>
+                  <div><strong>{state.result.summary.assets}</strong><span>{state.result.summary.format === 'pdf' ? 'Anhänge' : 'Bilder'}</span></div>
                   <div><strong>{formatBytes(state.result.summary.outputBytes)}</strong><span>Export</span></div>
                 </div>
                 {state.result.summary.warnings.length > 0 && (
@@ -276,16 +280,16 @@ export function App() {
           <div className="security-intro">
             <p className="section-label">Threat model</p>
             <h2 id="security-title">Misstrauen ist<br />hier ein Feature.</h2>
-            <p>Verdächtige Dateien werden abgelehnt, bevor sie dein System oder die Oberfläche beanspruchen können.</p>
+            <p>Verdächtige EPUBs und PDFs werden abgelehnt, bevor aktive Inhalte die Oberfläche erreichen können.</p>
           </div>
-          <article><span>01</span><h3>Isolierter Worker</h3><p>Die Konvertierung läuft getrennt vom UI und wird nach 20 Sekunden hart beendet.</p></article>
-          <article><span>02</span><h3>Harte Archivlimits</h3><p>Pfade, Dateizahl, Einzel- und Gesamtgröße sowie Kompressionsrate werden begrenzt.</p></article>
-          <article><span>03</span><h3>Passiver Export</h3><p>Skripte, Formulare, SVG, Remote-Links und aktive HTML-Fragmente gelangen nicht in die Ausgabe.</p></article>
+          <article><span>01</span><h3>Isolierter Worker</h3><p>Die Konvertierung läuft getrennt vom UI und wird nach 30 Sekunden hart beendet.</p></article>
+          <article><span>02</span><h3>Harte Ressourcenlimits</h3><p>Pfade, Größen, Kompressionsrate, Seitenzahl, Textmenge und Laufzeit werden begrenzt.</p></article>
+          <article><span>03</span><h3>Passiver Export</h3><p>Skripte, Formulare, Anhänge, SVG, Remote-Links und aktive HTML-Fragmente bleiben draußen.</p></article>
         </section>
       </main>
 
       <footer>
-        <span>EPUB Safe Studio · Open Source · MIT</span>
+        <span>Book2Markdown · Open Source · MIT</span>
         <span>Verarbeitung ausschließlich im Browser</span>
       </footer>
     </div>

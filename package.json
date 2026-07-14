@@ -1,7 +1,16 @@
 {
-  "name": "epub-safe-studio",
+  "name": "book2markdown",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
+  "description": "Local-first hardened EPUB and PDF to Markdown converter.",
+  "homepage": "https://github.com/leshxt/Book2Markdown#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/leshxt/Book2Markdown.git"
+  },
+  "bugs": {
+    "url": "https://github.com/leshxt/Book2Markdown/issues"
+  },
   "type": "module",
   "packageManager": "npm@11.8.0",
   "engines": {
@@ -20,6 +29,7 @@
     "fast-xml-parser": "5.10.0",
     "fflate": "0.8.3",
     "node-html-markdown": "2.0.0",
+    "pdfjs-dist": "^6.1.200",
     "react": "19.2.7",
     "react-dom": "19.2.7"
   },

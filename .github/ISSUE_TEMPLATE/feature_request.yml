@@ -1,0 +1,25 @@
+name: Feature request
+description: Suggest a focused local conversion improvement.
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: Explain the document workflow or conversion limitation.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+    validations:
+      required: true
+  - type: checkboxes
+    id: local
+    attributes:
+      label: Privacy boundary
+      options:
+        - label: The proposal can work without uploading documents or adding telemetry.
+          required: true

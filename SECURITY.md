@@ -1,25 +1,55 @@
 # Security policy
 
-EPUB Safe Studio treats every input as untrusted. The production app has no backend,
-does not upload books and ships with a Content Security Policy that blocks all network
-connections.
+## Threat model
+
+Book2Markdown assumes that every EPUB and PDF may be intentionally malicious. The application
+has no backend, never uploads a document and ships with a Content Security Policy that blocks
+all network connections.
+
+The goal is to reduce exposure to common archive, XML, active-content and resource-exhaustion
+attacks. This is defense in depth, not a proof that every future browser or parser vulnerability
+is impossible.
 
 ## Enforced boundaries
 
-- Conversion runs in a dedicated Web Worker with a 20-second watchdog and cancellation.
-- Input is capped at 80 MB, an entry at 25 MB and total unpacked data at 250 MB.
-- Archives are capped at 5,000 entries and a 100:1 per-entry compression ratio.
+### All documents
+
+- Conversion runs in a dedicated Web Worker with cancellation and a 30-second watchdog.
+- Input is capped at 80 MB and generated output at 300 MB.
+- Untrusted HTML/Markdown is never rendered; the UI preview is plain text.
+- The production CSP blocks `connect`, frames, objects, forms and non-local scripts.
+- External and executable URL schemes are removed from Markdown output.
+
+### EPUB
+
+- A ZIP entry is capped at 25 MB, total unpacked data at 250 MB and entries at 5,000.
+- Per-entry compression ratio is capped at 100:1.
 - Absolute, ambiguous, traversal and case-colliding ZIP paths are rejected.
 - XML DTD and entity declarations are rejected before parsing.
 - Scripts, forms, frames, embedded objects, SVG and remote resources are omitted.
 - Only signature-checked PNG, JPEG, GIF and WebP assets are exported.
-- Untrusted HTML/Markdown is never rendered by the application; the preview is plain text.
 
-These controls reduce the attack surface; they are not a formal guarantee against every
-unknown browser, decompressor or image-decoder vulnerability. For exceptionally hostile
-material, additionally use an up-to-date browser profile or disposable virtual machine.
+### PDF
+
+- The input must start with a PDF signature and may contain at most 2,000 pages.
+- Extracted text is capped at 2 MB per page and 30 MB overall.
+- PDF.js receives a local byte array; streaming, range loading and worker fetch are disabled.
+- Rendering, XFA, system fonts, font-face loading, image decoding and WASM are disabled.
+- Password-protected PDFs are rejected.
+- Forms, annotations, attachments, JavaScript and images are not exported.
+
+## Known limitations
+
+- A Web Worker provides termination and UI isolation, but browsers do not expose a strict
+  per-worker memory quota.
+- PDF text order is heuristic because PDF stores positioned glyphs rather than semantic blocks.
+- No OCR is performed; scanned pages produce a warning instead of text.
+- Raster image decoders remain part of the consumer's eventual Markdown viewer, not this app.
+
+For exceptionally hostile material, additionally use an updated disposable browser profile
+or virtual machine.
 
 ## Reporting a vulnerability
 
-Do not include weaponized EPUB files in a public issue. Open a private security advisory
-on the eventual GitHub repository and include the smallest non-sensitive reproduction.
+Do not attach weaponized files to a public issue. Use the repository's private GitHub Security
+Advisory flow and include the smallest non-sensitive reproduction possible.

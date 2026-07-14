@@ -1,6 +1,7 @@
 import type { Plugin } from 'vite'
 import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
+import { readFileSync } from 'node:fs'
 
 const CONTENT_SECURITY_POLICY = [
   "default-src 'self'",
@@ -17,7 +18,7 @@ const CONTENT_SECURITY_POLICY = [
 
 function productionCsp(): Plugin {
   return {
-    name: 'epub-safe-studio-csp',
+    name: 'book2markdown-csp',
     apply: 'build',
     transformIndexHtml: {
       order: 'post',
@@ -29,8 +30,32 @@ function productionCsp(): Plugin {
   }
 }
 
+function thirdPartyLicenses(): Plugin {
+  return {
+    name: 'book2markdown-third-party-licenses',
+    apply: 'build',
+    generateBundle() {
+      this.emitFile({
+        type: 'asset',
+        fileName: 'LICENSE',
+        source: readFileSync(new URL('./LICENSE', import.meta.url), 'utf8'),
+      })
+      this.emitFile({
+        type: 'asset',
+        fileName: 'THIRD_PARTY_NOTICES.md',
+        source: readFileSync(new URL('./THIRD_PARTY_NOTICES.md', import.meta.url), 'utf8'),
+      })
+      this.emitFile({
+        type: 'asset',
+        fileName: 'THIRD_PARTY_LICENSES/PDF.js-LICENSE.txt',
+        source: readFileSync(new URL('./THIRD_PARTY_LICENSES/PDF.js-LICENSE.txt', import.meta.url), 'utf8'),
+      })
+    },
+  }
+}
+
 export default defineConfig({
-  plugins: [react(), productionCsp()],
+  plugins: [react(), productionCsp(), thirdPartyLicenses()],
   build: {
     target: 'es2022',
     sourcemap: false,

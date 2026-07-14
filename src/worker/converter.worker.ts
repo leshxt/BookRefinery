@@ -1,10 +1,13 @@
 /// <reference lib="webworker" />
 
-import { convertEpub } from '../core/convert'
+import { GlobalWorkerOptions } from 'pdfjs-dist/legacy/build/pdf.mjs'
+import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
+import { convertDocument } from '../core/convert'
 import { publicError } from '../core/errors'
 import type { WorkerRequest, WorkerResponse } from './protocol'
 
 const workerScope: DedicatedWorkerGlobalScope = self as DedicatedWorkerGlobalScope
+GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
 function isConvertRequest(value: unknown): value is WorkerRequest {
   if (typeof value !== 'object' || value === null) return false
@@ -12,8 +15,8 @@ function isConvertRequest(value: unknown): value is WorkerRequest {
   return candidate['type'] === 'convert' && typeof candidate['filename'] === 'string' && candidate['buffer'] instanceof ArrayBuffer
 }
 
-workerScope.onmessage = (event: MessageEvent<unknown>) => {
-  if (!isConvertRequest(event.data)) {
+async function handleRequest(value: unknown): Promise<void> {
+  if (!isConvertRequest(value)) {
     const response: WorkerResponse = {
       type: 'error',
       code: 'CONVERSION_FAILED',
@@ -24,8 +27,7 @@ workerScope.onmessage = (event: MessageEvent<unknown>) => {
   }
 
   try {
-    const request = event.data
-    const result = convertEpub(new Uint8Array(request.buffer), request.filename, (progress) => {
+    const result = await convertDocument(new Uint8Array(value.buffer), value.filename, (progress) => {
       const response: WorkerResponse = { type: 'progress', progress }
       workerScope.postMessage(response)
     })
@@ -46,6 +48,10 @@ workerScope.onmessage = (event: MessageEvent<unknown>) => {
     const response: WorkerResponse = { type: 'error', ...failure }
     workerScope.postMessage(response)
   }
+}
+
+workerScope.onmessage = (event: MessageEvent<unknown>) => {
+  void handleRequest(event.data)
 }
 
 export {}

@@ -18,10 +18,12 @@ function isSummary(value: unknown): value is ConversionSummary {
   const candidate = value as Record<string, unknown>
   return (
     typeof candidate['title'] === 'string' &&
-    typeof candidate['chapters'] === 'number' &&
+    (candidate['format'] === 'epub' || candidate['format'] === 'pdf') &&
+    typeof candidate['units'] === 'number' &&
+    (candidate['unitLabel'] === 'Kapitel' || candidate['unitLabel'] === 'Seiten') &&
     typeof candidate['assets'] === 'number' &&
     typeof candidate['inputBytes'] === 'number' &&
-    typeof candidate['uncompressedBytes'] === 'number' &&
+    typeof candidate['processedBytes'] === 'number' &&
     typeof candidate['outputBytes'] === 'number' &&
     Array.isArray(candidate['warnings']) &&
     candidate['warnings'].every((warning) => typeof warning === 'string')
@@ -60,9 +62,9 @@ export async function runConversion(
   const inputBuffer = await file.arrayBuffer()
 
   return new Promise((resolve, reject) => {
-    const worker = new Worker(new URL('./epub.worker.ts', import.meta.url), {
+    const worker = new Worker(new URL('./converter.worker.ts', import.meta.url), {
       type: 'module',
-      name: 'epub-safe-converter',
+      name: 'book2markdown-converter',
     })
     let settled = false
 
@@ -82,7 +84,7 @@ export async function runConversion(
     const timeout = globalThis.setTimeout(() => {
       if (settled) return
       cleanup()
-      reject(new WorkerConversionError('LIMIT_EXCEEDED', 'Die Sicherheits-Zeitgrenze von 20 Sekunden wurde erreicht.'))
+      reject(new WorkerConversionError('LIMIT_EXCEEDED', 'Die Sicherheits-Zeitgrenze von 30 Sekunden wurde erreicht.'))
     }, SECURITY_POLICY.workerTimeoutMs)
 
     signal.addEventListener('abort', abort, { once: true })

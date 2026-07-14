@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate'
 import { openSecureArchive } from '../core/archive'
-import { convertEpub } from '../core/convert'
+import { convertDocument, convertEpub } from '../core/convert'
 import { SecurityError } from '../core/errors'
 import { resolveArchiveReference, validateArchiveEntryName } from '../core/path'
 import { parseXmlSecure } from '../core/xml'
 import { makeEpub } from './fixtures'
+import { makePdf } from './pdf-fixture'
 
 describe('archive path hardening', () => {
   it.each(['../evil.txt', '/absolute.txt', 'C:/windows.txt', 'safe\\evil.txt', 'a//b.txt'])(
@@ -72,5 +73,33 @@ describe('secure EPUB conversion', () => {
   it('rejects entity declarations inside XHTML chapters', () => {
     const chapter = '<!DOCTYPE html [<!ENTITY x "boom">]><html><body><p>&x;</p></body></html>'
     expect(() => convertEpub(makeEpub({ chapter }), 'entity.epub')).toThrow(/DTD- oder Entity/u)
+  })
+})
+
+describe('secure PDF conversion', () => {
+  it('extracts text pages into a passive Markdown bundle', async () => {
+    const result = await convertDocument(makePdf([['Hallo PDF', 'Zweite Zeile'], ['Seite zwei']]), 'test.pdf')
+    const output = unzipSync(result.archive)
+    const document = strFromU8(output['document.md']!)
+
+    expect(result.summary.format).toBe('pdf')
+    expect(result.summary.units).toBe(2)
+    expect(document).toContain('# Test PDF')
+    expect(document).toContain('## Seite 1')
+    expect(document).toContain('Hallo PDF')
+    expect(document).toContain('## Seite 2')
+    expect(Object.keys(output)).toContain('SECURITY-REPORT.md')
+  })
+
+  it('neutralizes URLs found in PDF text', async () => {
+    const result = await convertDocument(makePdf([['Visit https://attacker.invalid/path now']]), 'links.pdf')
+    const document = strFromU8(unzipSync(result.archive)['document.md']!)
+
+    expect(document).toContain('externe URL entfernt')
+    expect(document).not.toContain('attacker.invalid')
+  })
+
+  it('rejects unknown input formats before parsing', async () => {
+    await expect(convertDocument(strToU8('not an ebook'), 'fake.bin')).rejects.toThrow(/weder ein unterstütztes EPUB noch ein PDF/u)
   })
 })

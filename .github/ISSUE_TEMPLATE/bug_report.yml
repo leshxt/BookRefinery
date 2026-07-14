@@ -1,0 +1,33 @@
+name: Bug report
+description: Report a reproducible conversion or interface problem.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Do not upload confidential or weaponized ebooks. Use a private security advisory for vulnerabilities.
+  - type: dropdown
+    id: format
+    attributes:
+      label: Input format
+      options: [EPUB, PDF, Not format-specific]
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: What happened?
+      description: Include the smallest non-sensitive reproduction steps and the exact error shown.
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and version
+    validations:
+      required: true
+  - type: textarea
+    id: checks
+    attributes:
+      label: Additional context
+      description: Mention whether npm run verify passes locally if you changed the code.

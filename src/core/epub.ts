@@ -19,7 +19,7 @@ export interface EpubPackage {
 }
 
 function requireRecord(value: unknown, message: string): Record<string, unknown> {
-  if (!isRecord(value)) throw new SecurityError('INVALID_EPUB', message)
+  if (!isRecord(value)) throw new SecurityError('INVALID_DOCUMENT', message)
   return value
 }
 
@@ -37,7 +37,7 @@ function firstText(value: unknown): string | undefined {
 function findPackagePath(entries: ReadonlyMap<string, Uint8Array>): string {
   const containerBytes = entries.get('META-INF/container.xml')
   if (!containerBytes) {
-    throw new SecurityError('INVALID_EPUB', 'META-INF/container.xml fehlt.')
+    throw new SecurityError('INVALID_DOCUMENT', 'META-INF/container.xml fehlt.')
   }
 
   const parsed = requireRecord(parseXmlSecure(containerBytes, 'container.xml'), 'container.xml ist ungültig.')
@@ -47,7 +47,7 @@ function findPackagePath(entries: ReadonlyMap<string, Uint8Array>): string {
   const fullPath = rootfile?.['full-path']
 
   if (typeof fullPath !== 'string' || !fullPath.trim()) {
-    throw new SecurityError('INVALID_EPUB', 'container.xml nennt keine OPF-Paketdatei.')
+    throw new SecurityError('INVALID_DOCUMENT', 'container.xml nennt keine OPF-Paketdatei.')
   }
 
   return resolveArchiveReference('', fullPath.trim())
@@ -56,13 +56,13 @@ function findPackagePath(entries: ReadonlyMap<string, Uint8Array>): string {
 export function readEpubPackage(entries: ReadonlyMap<string, Uint8Array>): EpubPackage {
   const mimetype = entries.get('mimetype')
   if (!mimetype || new TextDecoder().decode(mimetype) !== 'application/epub+zip') {
-    throw new SecurityError('INVALID_EPUB', 'Der EPUB-MIME-Typ fehlt oder ist ungültig.')
+    throw new SecurityError('INVALID_DOCUMENT', 'Der EPUB-MIME-Typ fehlt oder ist ungültig.')
   }
 
   const packagePath = findPackagePath(entries)
   const packageBytes = entries.get(packagePath)
   if (!packageBytes) {
-    throw new SecurityError('INVALID_EPUB', 'Die in container.xml genannte OPF-Datei fehlt.')
+    throw new SecurityError('INVALID_DOCUMENT', 'Die in container.xml genannte OPF-Datei fehlt.')
   }
 
   const parsed = requireRecord(parseXmlSecure(packageBytes, 'OPF-Paketdatei'), 'Die OPF-Paketdatei ist ungültig.')
@@ -88,7 +88,7 @@ export function readEpubPackage(entries: ReadonlyMap<string, Uint8Array>): EpubP
       properties: typeof item['properties'] === 'string' ? item['properties'].split(/\s+/u) : [],
     }
     if (byId.has(id)) {
-      throw new SecurityError('INVALID_EPUB', 'Das OPF-Manifest enthält doppelte IDs.')
+      throw new SecurityError('INVALID_DOCUMENT', 'Das OPF-Manifest enthält doppelte IDs.')
     }
     manifest.push(manifestItem)
     byId.set(id, manifestItem)
@@ -100,7 +100,7 @@ export function readEpubPackage(entries: ReadonlyMap<string, Uint8Array>): EpubP
     if (typeof idref !== 'string') continue
     const item = byId.get(idref)
     if (!item) {
-      throw new SecurityError('INVALID_EPUB', 'Die Lesereihenfolge verweist auf einen fehlenden Manifest-Eintrag.')
+      throw new SecurityError('INVALID_DOCUMENT', 'Die Lesereihenfolge verweist auf einen fehlenden Manifest-Eintrag.')
     }
     if (item.mediaType === 'application/xhtml+xml' || item.mediaType === 'text/html') {
       spine.push(item)
@@ -108,7 +108,7 @@ export function readEpubPackage(entries: ReadonlyMap<string, Uint8Array>): EpubP
   }
 
   if (spine.length === 0) {
-    throw new SecurityError('UNSUPPORTED_EPUB', 'Das EPUB enthält keine unterstützten XHTML-Kapitel.')
+    throw new SecurityError('UNSUPPORTED_DOCUMENT', 'Das EPUB enthält keine unterstützten XHTML-Kapitel.')
   }
 
   const author = firstText(metadata['creator'])

@@ -1,8 +1,15 @@
 # Third-party notices
 
-EPUB Safe Studio is an independent, substantially rewritten derivative inspired by
+Book2Markdown is an independent, substantially rewritten derivative inspired by
 [`uxiew/epub2MD`](https://github.com/uxiew/epub2MD). It is not affiliated with or
 endorsed by the original project.
+
+Book2Markdown also uses Mozilla PDF.js (`pdfjs-dist`) under the Apache License 2.0
+for local PDF parsing and text extraction. The package is used without its viewer,
+network loading, form rendering or scripting features. See
+[`mozilla/pdf.js`](https://github.com/mozilla/pdf.js) and the license distributed
+with the npm package.
+An exact copy is included at `THIRD_PARTY_LICENSES/PDF.js-LICENSE.txt`.
 
 ## epub2MD
 
