@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Fixed EPUB conversion in the browser by removing a Node-only `process.env.LOG_PERF` access from the bundled HTML-to-Markdown dependency.
+- Added a regression test for both development and production browser configuration.
+
 ## 0.3.0 - 2026-07-14
 
 - Switched the complete application interface and generated reports to English.

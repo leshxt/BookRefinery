@@ -56,6 +56,12 @@ function thirdPartyLicenses(): Plugin {
 
 export default defineConfig({
   plugins: [react(), productionCsp(), thirdPartyLicenses()],
+  // node-html-markdown 2.0.0 reads this Node-only performance flag even in
+  // its browser path. Replace the exact flag instead of exposing a process
+  // polyfill inside the converter worker.
+  define: {
+    'process.env.LOG_PERF': 'false',
+  },
   build: {
     target: 'es2022',
     sourcemap: false,
