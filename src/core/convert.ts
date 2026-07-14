@@ -1,18 +1,49 @@
 import { strToU8, zipSync } from 'fflate'
 import { openSecureArchive } from './archive'
-import { SecurityError } from './errors'
 import { readEpubPackage, type ManifestItem } from './epub'
+import { SecurityError } from './errors'
 import { xhtmlToSafeMarkdown } from './markdown'
-import { safeOutputName } from './path'
-import { SECURITY_POLICY } from './policy'
-import { assertNoUnsafeXmlMarkup, decodeUtf8 } from './xml'
+import { archiveDirname, resolveArchiveReference, safeOutputName } from './path'
 import { convertPdf } from './pdf'
+import { SECURITY_POLICY } from './policy'
+import { sanitizeSvg } from './svg'
+import { decodeUtf8, stripInertDocumentTypes } from './xml'
 
-const RASTER_TYPES = new Map<string, { extension: string; signature: (bytes: Uint8Array) => boolean }>([
-  ['image/png', { extension: 'png', signature: (b) => b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47 }],
-  ['image/jpeg', { extension: 'jpg', signature: (b) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff }],
-  ['image/gif', { extension: 'gif', signature: (b) => String.fromCharCode(...b.slice(0, 6)) === 'GIF87a' || String.fromCharCode(...b.slice(0, 6)) === 'GIF89a' }],
-  ['image/webp', { extension: 'webp', signature: (b) => String.fromCharCode(...b.slice(0, 4)) === 'RIFF' && String.fromCharCode(...b.slice(8, 12)) === 'WEBP' }],
+interface RasterDescriptor {
+  readonly extension: string
+  readonly signature: (bytes: Uint8Array) => boolean
+}
+
+interface AssetTarget {
+  readonly outputPath: string
+  readonly kind: 'raster' | 'svg'
+}
+
+const RASTER_TYPES = new Map<string, RasterDescriptor>([
+  ['image/png', {
+    extension: 'png',
+    signature: (bytes) =>
+      bytes.byteLength >= 8 &&
+      [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a].every((value, index) => bytes[index] === value),
+  }],
+  ['image/jpeg', {
+    extension: 'jpg',
+    signature: (bytes) => bytes.byteLength >= 4 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff,
+  }],
+  ['image/gif', {
+    extension: 'gif',
+    signature: (bytes) => {
+      const header = String.fromCharCode(...bytes.slice(0, 6))
+      return bytes.byteLength >= 6 && (header === 'GIF87a' || header === 'GIF89a')
+    },
+  }],
+  ['image/webp', {
+    extension: 'webp',
+    signature: (bytes) =>
+      bytes.byteLength >= 12 &&
+      String.fromCharCode(...bytes.slice(0, 4)) === 'RIFF' &&
+      String.fromCharCode(...bytes.slice(8, 12)) === 'WEBP',
+  }],
 ])
 
 export interface ConversionProgress {
@@ -26,7 +57,7 @@ export interface ConversionSummary {
   readonly author?: string
   readonly language?: string
   readonly units: number
-  readonly unitLabel: 'Kapitel' | 'Seiten'
+  readonly unitLabel: 'chapters' | 'pages'
   readonly assets: number
   readonly inputBytes: number
   readonly processedBytes: number
@@ -43,47 +74,6 @@ export interface ConversionResult {
 
 type ProgressReporter = (progress: ConversionProgress) => void
 
-function reportMarkdown(summary: ConversionSummary, sourceName: string): string {
-  const warningList = summary.warnings.length
-    ? summary.warnings.map((warning) => `- ${markdownInline(warning)}`).join('\n')
-    : '- Keine inhaltlichen Warnungen.'
-
-  return `# Sicherheitsbericht
-
-- Quelle: ${markdownInline(sourceName)}
-- Titel: ${markdownInline(summary.title)}
-- Kapitel: ${summary.units}
-- exportierte Rasterbilder: ${summary.assets}
-- Archiveinträge geprüft: ja
-- externe Netzwerkinhalte geladen: nein
-- DTD/XML-Entities erlaubt: nein
-- aktives HTML ausgegeben: nein
-
-## Hinweise
-
-${warningList}
-
-## Durchgesetzte Grenzen
-
-- Eingabe: 80 MB
-- einzelne entpackte Datei: 25 MB
-- entpackt gesamt: 250 MB
-- Archiveinträge: 5.000
-- Kompressionsverhältnis: 100:1
-
-Die Härtung reduziert typische Risiken erheblich, ist aber keine mathematische Sicherheitsgarantie.
-`
-}
-
-function chapterTitle(markdown: string, item: ManifestItem, index: number): string {
-  const heading = markdown.match(/^#{1,6}\s+(.+)$/mu)?.[1]?.replace(/[*_`[\]]/gu, '').trim()
-  return safeOutputName(heading ?? item.id, `Kapitel ${index + 1}`)
-}
-
-function sourceStem(filename: string): string {
-  return safeOutputName(filename.replace(/\.epub$/iu, ''), 'epub-export')
-}
-
 function markdownInline(value: string): string {
   return value
     .replace(/[\u0000-\u001f\u007f]/gu, ' ')
@@ -95,85 +85,212 @@ function markdownInline(value: string): string {
     .slice(0, 500)
 }
 
+function reportMarkdown(summary: ConversionSummary, sourceName: string): string {
+  const warningList = summary.warnings.length
+    ? summary.warnings.map((warning) => `- ${markdownInline(warning)}`).join('\n')
+    : '- No content warnings.'
+
+  return `# Security report
+
+- Source: ${markdownInline(sourceName)}
+- Title: ${markdownInline(summary.title)}
+- Reading-order items: ${summary.units}
+- Exported sanitized or signature-checked images: ${summary.assets}
+- Archive entries checked: yes
+- External network content loaded: no
+- XML entities allowed: no
+- Active HTML exported: no
+
+## Warnings
+
+${warningList}
+
+## Enforced limits
+
+- Input: 80 MB
+- Individual unpacked file: 25 MB
+- Total unpacked data: 250 MB
+- Archive entries: 5,000
+- Compression ratio: 100:1 for entries of 4 MB or more
+- Isolated conversion worker: 120 seconds
+
+The hardening substantially reduces common risks, but it is not a mathematical security guarantee.
+`
+}
+
+function chapterTitle(markdown: string, item: ManifestItem, index: number): string {
+  const heading = markdown.match(/^#{1,6}\s+(.+)$/mu)?.[1]?.replace(/[*_`[\]]/gu, '').trim()
+  return safeOutputName(heading ?? item.id, `Chapter ${index + 1}`)
+}
+
+function sourceStem(filename: string): string {
+  return safeOutputName(filename.replace(/\.epub$/iu, ''), 'epub-export')
+}
+
+function isContentDocument(item: ManifestItem): boolean {
+  return item.mediaType === 'application/xhtml+xml' || item.mediaType === 'text/html'
+}
+
+function assetBaseName(item: ManifestItem, fallback: string): string {
+  return item.path.split('/').at(-1)?.replace(/\.[^.]+$/u, '') ?? fallback
+}
+
+function outputAssetPath(sequence: number, baseName: string, extension: string): string {
+  const fallback = `image-${sequence}`
+  return `assets/${String(sequence).padStart(3, '0')}-${safeOutputName(baseName, fallback)}.${extension}`
+}
+
+function outputAssetName(outputPath: string): string | null {
+  return outputPath.split('/').at(-1) ?? null
+}
+
 export function convertEpub(
   bytes: Uint8Array,
   sourceName: string,
   onProgress: ProgressReporter = () => undefined,
 ): ConversionResult {
-  onProgress({ percent: 8, label: 'Archivstruktur wird geprüft' })
+  onProgress({ percent: 8, label: 'Checking archive structure' })
   const archive = openSecureArchive(bytes)
 
-  onProgress({ percent: 22, label: 'EPUB-Paket wird validiert' })
+  onProgress({ percent: 20, label: 'Validating the EPUB package' })
   const epub = readEpubPackage(archive.entries)
-  const warnings: string[] = []
+  const warnings = [...epub.warnings]
   const outputFiles: Record<string, Uint8Array> = {}
-  const imageTargets = new Map<string, string>()
-  let assetCount = 0
+  const assetTargets = new Map<string, AssetTarget>()
+  let assetSequence = 0
 
   for (const item of epub.manifest) {
-    if (!item.mediaType.startsWith('image/')) continue
     const descriptor = RASTER_TYPES.get(item.mediaType)
+    if (!descriptor) continue
     const data = archive.entries.get(item.path)
-    if (!descriptor || !data || !descriptor.signature(data)) {
-      warnings.push(`Bild „${item.id}“ wurde wegen Typ, Signatur oder Format ausgelassen.`)
+    if (!data || !descriptor.signature(data)) {
+      warnings.push(`Image "${item.id}" was omitted because its declared type, signature, or file data is invalid.`)
       continue
     }
 
-    assetCount += 1
-    const baseName = item.path.split('/').at(-1)?.replace(/\.[^.]+$/u, '') ?? `bild-${assetCount}`
-    const outputPath = `assets/${String(assetCount).padStart(3, '0')}-${safeOutputName(baseName, `bild-${assetCount}`)}.${descriptor.extension}`
-    imageTargets.set(item.path, outputPath)
+    assetSequence += 1
+    const outputPath = outputAssetPath(assetSequence, assetBaseName(item, `image-${assetSequence}`), descriptor.extension)
+    assetTargets.set(item.path, { outputPath, kind: 'raster' })
     outputFiles[outputPath] = data
   }
 
-  const chapters: string[] = []
-  for (const [index, item] of epub.spine.entries()) {
-    const chapterBytes = archive.entries.get(item.path)
-    if (!chapterBytes) {
-      warnings.push(`Kapitel „${item.id}“ fehlt und wurde übersprungen.`)
+  const resolveSvgImage = (svgPath: string, reference: string): string | null => {
+    try {
+      const archivePath = resolveArchiveReference(archiveDirname(svgPath), reference)
+      const target = assetTargets.get(archivePath)
+      return target?.kind === 'raster' ? outputAssetName(target.outputPath) : null
+    } catch (error) {
+      if (!(error instanceof SecurityError)) throw error
+      return null
+    }
+  }
+
+  for (const item of epub.manifest) {
+    if (item.mediaType !== 'image/svg+xml') continue
+    const data = archive.entries.get(item.path)
+    if (!data) {
+      warnings.push(`SVG image "${item.id}" is missing and was omitted.`)
       continue
     }
-    if (chapterBytes.byteLength > SECURITY_POLICY.maxXhtmlBytes) {
-      throw new SecurityError('LIMIT_EXCEEDED', `Kapitel „${item.id}“ überschreitet das XHTML-Limit.`)
+
+    try {
+      const sanitized = sanitizeSvg(data, `SVG image "${item.id}"`, (reference) => resolveSvgImage(item.path, reference))
+      assetSequence += 1
+      const outputPath = outputAssetPath(assetSequence, assetBaseName(item, `image-${assetSequence}`), 'svg')
+      assetTargets.set(item.path, { outputPath, kind: 'svg' })
+      outputFiles[outputPath] = sanitized.content
+      warnings.push(...sanitized.warnings.map((warning) => `SVG "${item.id}": ${warning}`))
+    } catch (error) {
+      if (!(error instanceof SecurityError)) throw error
+      warnings.push(`SVG image "${item.id}" was omitted: ${error.message}`)
+    }
+  }
+
+  const imageTargets = new Map([...assetTargets].map(([path, target]) => [path, target.outputPath]))
+  const chapters: string[] = []
+
+  for (const [index, item] of epub.spine.entries()) {
+    let body: string
+    let title: string
+
+    if (isContentDocument(item)) {
+      const chapterBytes = archive.entries.get(item.path)
+      if (!chapterBytes) {
+        warnings.push(`Reading-order item "${item.id}" is missing and was skipped.`)
+        continue
+      }
+      if (chapterBytes.byteLength > SECURITY_POLICY.maxXhtmlBytes) {
+        throw new SecurityError('LIMIT_EXCEEDED', `Reading-order item "${item.id}" exceeds the XHTML limit.`)
+      }
+
+      const label = `Reading-order item "${item.id}"`
+      const decoded = decodeUtf8(chapterBytes, label)
+      const prepared = stripInertDocumentTypes(decoded, label)
+      if (prepared.removed) warnings.push(`Removed an inert legacy document type from "${item.id}".`)
+
+      const converted = xhtmlToSafeMarkdown(prepared.text, item.path, imageTargets, (inlineSvg, alt) => {
+        try {
+          const sanitized = sanitizeSvg(
+            new TextEncoder().encode(inlineSvg),
+            `Inline SVG in "${item.id}"`,
+            (reference) => resolveSvgImage(item.path, reference),
+          )
+          assetSequence += 1
+          const outputPath = outputAssetPath(assetSequence, `inline-${safeOutputName(alt, 'svg')}`, 'svg')
+          outputFiles[outputPath] = sanitized.content
+          warnings.push(...sanitized.warnings.map((warning) => `Inline SVG in "${item.id}": ${warning}`))
+          return outputPath
+        } catch (error) {
+          if (!(error instanceof SecurityError)) throw error
+          warnings.push(`Removed an inline SVG from "${item.id}": ${error.message}`)
+          return null
+        }
+      })
+      warnings.push(...converted.warnings)
+      title = chapterTitle(converted.markdown, item, index)
+      body = converted.markdown || `# ${title}\n\n[Empty chapter]`
+    } else {
+      const target = imageTargets.get(item.path)
+      if (!target) {
+        warnings.push(`Visual reading-order item "${item.id}" could not be sanitized and was skipped.`)
+        continue
+      }
+      title = safeOutputName(item.id, `Page ${index + 1}`)
+      body = `# ${markdownInline(title)}\n\n![${markdownInline(title)}](${target})`
     }
 
-    const html = decodeUtf8(chapterBytes, `Kapitel „${item.id}“`)
-    assertNoUnsafeXmlMarkup(html, `Kapitel „${item.id}“`, true)
-    const converted = xhtmlToSafeMarkdown(html, item.path, imageTargets)
-    warnings.push(...converted.warnings)
-    const title = chapterTitle(converted.markdown, item, index)
-    const body = converted.markdown || `# ${title}\n\n[Leeres Kapitel]`
     chapters.push(body)
     outputFiles[`chapters/${String(index + 1).padStart(3, '0')}-${title}.md`] = strToU8(
       body.replace(/\]\(assets\//gu, '](../assets/'),
     )
 
     onProgress({
-      percent: 30 + Math.round(((index + 1) / epub.spine.length) * 52),
-      label: `Kapitel ${index + 1} von ${epub.spine.length} wird bereinigt`,
+      percent: 28 + Math.round(((index + 1) / epub.spine.length) * 56),
+      label: `Sanitizing item ${index + 1} of ${epub.spine.length}`,
     })
   }
 
   if (chapters.length === 0) {
-    throw new SecurityError('UNSUPPORTED_DOCUMENT', 'Aus dem EPUB konnten keine sicheren Kapitel erzeugt werden.')
+    throw new SecurityError('UNSUPPORTED_DOCUMENT', 'No safe reading-order items could be produced from this EPUB.')
   }
 
   const frontMatter = [
     `# ${markdownInline(epub.title)}`,
-    epub.author ? `**Autor:in:** ${markdownInline(epub.author)}` : '',
-    epub.language ? `**Sprache:** ${markdownInline(epub.language)}` : '',
+    epub.author ? `**Author:** ${markdownInline(epub.author)}` : '',
+    epub.language ? `**Language:** ${markdownInline(epub.language)}` : '',
   ].filter(Boolean).join('\n\n')
   const combined = `${frontMatter}\n\n---\n\n${chapters.join('\n\n---\n\n')}\n`
   outputFiles['book.md'] = strToU8(combined)
 
   const uniqueWarnings = [...new Set(warnings)].slice(0, 100)
+  const assetCount = Object.keys(outputFiles).filter((path) => path.startsWith('assets/')).length
   const provisionalSummary: ConversionSummary = {
     format: 'epub',
     title: epub.title,
     ...(epub.author ? { author: epub.author } : {}),
     ...(epub.language ? { language: epub.language } : {}),
     units: chapters.length,
-    unitLabel: 'Kapitel',
+    unitLabel: 'chapters',
     assets: assetCount,
     inputBytes: bytes.byteLength,
     processedBytes: archive.uncompressedBytes,
@@ -182,18 +299,18 @@ export function convertEpub(
   }
   outputFiles['SECURITY-REPORT.md'] = strToU8(reportMarkdown(provisionalSummary, sourceName))
 
-  onProgress({ percent: 90, label: 'Sicheres Exportpaket wird erstellt' })
+  onProgress({ percent: 92, label: 'Building the passive export bundle' })
   const resultArchive = zipSync(outputFiles, { level: 6, mtime: new Date('2026-01-01T00:00:00Z') })
   if (resultArchive.byteLength > SECURITY_POLICY.maxOutputBytes) {
-    throw new SecurityError('LIMIT_EXCEEDED', 'Das Exportpaket überschreitet das Ausgabelimit.')
+    throw new SecurityError('LIMIT_EXCEEDED', 'The export bundle exceeds the output size limit.')
   }
 
   const summary = { ...provisionalSummary, outputBytes: resultArchive.byteLength }
-  onProgress({ percent: 100, label: 'Konvertierung abgeschlossen' })
+  onProgress({ percent: 100, label: 'Conversion complete' })
 
   return {
     archive: resultArchive,
-    filename: `${sourceStem(sourceName)}-safe-markdown.zip`,
+    filename: `${sourceStem(sourceName)}-markdown.zip`,
     summary,
     preview: combined.slice(0, 8_000),
   }
@@ -212,7 +329,7 @@ function inputFormat(bytes: Uint8Array): 'epub' | 'pdf' {
   const isZip = bytes.byteLength >= 4 && bytes[0] === 0x50 && bytes[1] === 0x4b
   if (isZip) return 'epub'
 
-  throw new SecurityError('INVALID_DOCUMENT', 'Die Datei ist weder ein unterstütztes EPUB noch ein PDF.')
+  throw new SecurityError('INVALID_DOCUMENT', 'The file is neither a supported EPUB nor a PDF.')
 }
 
 export async function convertDocument(
@@ -221,7 +338,7 @@ export async function convertDocument(
   onProgress: ProgressReporter = () => undefined,
 ): Promise<ConversionResult> {
   if (bytes.byteLength > SECURITY_POLICY.maxInputBytes) {
-    throw new SecurityError('LIMIT_EXCEEDED', 'Die Datei überschreitet das Eingabelimit von 80 MB.')
+    throw new SecurityError('LIMIT_EXCEEDED', 'The file exceeds the 80 MB input limit.')
   }
 
   return inputFormat(bytes) === 'pdf'

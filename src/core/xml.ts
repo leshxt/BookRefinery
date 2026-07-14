@@ -4,7 +4,6 @@ import { SECURITY_POLICY } from './policy'
 
 const DOCTYPE_DECLARATION = /<!\s*DOCTYPE\b/iu
 const ENTITY_DECLARATION = /<!\s*ENTITY\b/iu
-const SIMPLE_HTML_DOCTYPE = /<!\s*DOCTYPE\s+html\s*>/giu
 
 const parser = new XMLParser({
   ignoreAttributes: false,
@@ -22,13 +21,13 @@ export function decodeUtf8(bytes: Uint8Array, label: string): string {
   try {
     return new TextDecoder('utf-8', { fatal: true }).decode(bytes)
   } catch {
-    throw new SecurityError('INVALID_DOCUMENT', `${label} ist nicht gültig UTF-8-codiert.`)
+    throw new SecurityError('INVALID_DOCUMENT', `${label} is not valid UTF-8.`)
   }
 }
 
 export function parseXmlSecure(bytes: Uint8Array, label: string): unknown {
   if (bytes.byteLength > SECURITY_POLICY.maxXmlBytes) {
-    throw new SecurityError('LIMIT_EXCEEDED', `${label} überschreitet das XML-Größenlimit.`)
+    throw new SecurityError('LIMIT_EXCEEDED', `${label} exceeds the XML size limit.`)
   }
 
   const xml = decodeUtf8(bytes, label)
@@ -38,15 +37,65 @@ export function parseXmlSecure(bytes: Uint8Array, label: string): unknown {
     const parsed: unknown = parser.parse(xml)
     return parsed
   } catch {
-    throw new SecurityError('INVALID_DOCUMENT', `${label} enthält ungültiges XML.`)
+    throw new SecurityError('INVALID_DOCUMENT', `${label} contains invalid XML.`)
   }
 }
 
-export function assertNoUnsafeXmlMarkup(xml: string, label: string, allowSimpleHtmlDoctype = false): void {
-  const inspected = allowSimpleHtmlDoctype ? xml.replace(SIMPLE_HTML_DOCTYPE, '') : xml
-  if (DOCTYPE_DECLARATION.test(inspected) || ENTITY_DECLARATION.test(inspected)) {
-    throw new SecurityError('UNSAFE_XML', `${label} enthält eine verbotene DTD- oder Entity-Deklaration.`)
+export function assertNoUnsafeXmlMarkup(xml: string, label: string): void {
+  if (DOCTYPE_DECLARATION.test(xml) || ENTITY_DECLARATION.test(xml)) {
+    throw new SecurityError('UNSAFE_XML', `${label} contains a forbidden DTD or entity declaration.`)
   }
+}
+
+export function stripInertDocumentTypes(xml: string, label: string): { readonly text: string; readonly removed: boolean } {
+  if (ENTITY_DECLARATION.test(xml)) {
+    throw new SecurityError('UNSAFE_XML', `${label} contains a forbidden entity declaration.`)
+  }
+
+  let output = ''
+  let cursor = 0
+  let removed = false
+
+  while (true) {
+    const remaining = xml.slice(cursor)
+    const match = /<!\s*DOCTYPE\b/iu.exec(remaining)
+    if (!match) {
+      output += remaining
+      break
+    }
+
+    const start = cursor + match.index
+    output += xml.slice(cursor, start)
+    let quote: '"' | "'" | null = null
+    let end = -1
+
+    for (let index = start; index < xml.length; index += 1) {
+      const character = xml[index]
+      if (quote) {
+        if (character === quote) quote = null
+        continue
+      }
+      if (character === '"' || character === "'") {
+        quote = character
+        continue
+      }
+      if (character === '[') {
+        throw new SecurityError('UNSAFE_XML', `${label} contains a forbidden internal DTD subset.`)
+      }
+      if (character === '>') {
+        end = index + 1
+        break
+      }
+    }
+
+    if (end < 0) {
+      throw new SecurityError('INVALID_DOCUMENT', `${label} contains an unterminated document type declaration.`)
+    }
+    removed = true
+    cursor = end
+  }
+
+  return { text: output, removed }
 }
 
 export function isRecord(value: unknown): value is Record<string, unknown> {

@@ -20,7 +20,7 @@ function isSummary(value: unknown): value is ConversionSummary {
     typeof candidate['title'] === 'string' &&
     (candidate['format'] === 'epub' || candidate['format'] === 'pdf') &&
     typeof candidate['units'] === 'number' &&
-    (candidate['unitLabel'] === 'Kapitel' || candidate['unitLabel'] === 'Seiten') &&
+    (candidate['unitLabel'] === 'chapters' || candidate['unitLabel'] === 'pages') &&
     typeof candidate['assets'] === 'number' &&
     typeof candidate['inputBytes'] === 'number' &&
     typeof candidate['processedBytes'] === 'number' &&
@@ -78,26 +78,26 @@ export async function runConversion(
     const abort = (): void => {
       if (settled) return
       cleanup()
-      reject(new DOMException('Konvertierung abgebrochen.', 'AbortError'))
+      reject(new DOMException('Conversion cancelled.', 'AbortError'))
     }
 
     const timeout = globalThis.setTimeout(() => {
       if (settled) return
       cleanup()
-      reject(new WorkerConversionError('LIMIT_EXCEEDED', 'Die Sicherheits-Zeitgrenze von 30 Sekunden wurde erreicht.'))
+      reject(new WorkerConversionError('LIMIT_EXCEEDED', 'The 120-second safety timeout was reached.'))
     }, SECURITY_POLICY.workerTimeoutMs)
 
     signal.addEventListener('abort', abort, { once: true })
     worker.onerror = () => {
       if (settled) return
       cleanup()
-      reject(new WorkerConversionError('CONVERSION_FAILED', 'Der isolierte Konvertierungsprozess ist abgestürzt.'))
+      reject(new WorkerConversionError('CONVERSION_FAILED', 'The isolated conversion worker crashed.'))
     }
     worker.onmessage = (event: MessageEvent<unknown>) => {
       if (settled) return
       if (!isWorkerResponse(event.data)) {
         cleanup()
-        reject(new WorkerConversionError('CONVERSION_FAILED', 'Der Konvertierungsprozess lieferte ungültige Daten.'))
+        reject(new WorkerConversionError('CONVERSION_FAILED', 'The conversion worker returned invalid data.'))
         return
       }
 

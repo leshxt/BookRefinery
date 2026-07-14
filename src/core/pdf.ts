@@ -35,8 +35,8 @@ function safePlainText(value: string, maxLength = 500): string {
 function safeMarkdownText(value: string): string {
   return value
     .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/gu, '')
-    .replace(/\b(?:https?|ftp):\/\/[^\s<>)\]]+/giu, '[externe URL entfernt]')
-    .replace(/\b(?:javascript|vbscript|data|file):[^\s<>)\]]*/giu, '[unsichere URL entfernt]')
+    .replace(/\b(?:https?|ftp):\/\/[^\s<>)\]]+/giu, '[external URL removed]')
+    .replace(/\b(?:javascript|vbscript|data|file):[^\s<>)\]]*/giu, '[unsafe URL removed]')
     .replace(/\\/gu, '\\\\')
     .replace(/([`*_[\]{}])/gu, '\\$1')
     .replace(/</gu, '&lt;')
@@ -120,32 +120,31 @@ function metadataText(info: unknown, key: string): string | undefined {
 }
 
 function reportMarkdown(summary: ConversionSummary, sourceName: string): string {
-  return `# Sicherheitsbericht
+  return `# Security report
 
-- Quelle: ${safeMarkdownText(sourceName)}
+- Source: ${safeMarkdownText(sourceName)}
 - Format: PDF
-- Titel: ${safeMarkdownText(summary.title)}
-- Seiten verarbeitet: ${summary.units}
-- externe Netzwerkinhalte geladen: nein
-- PDF-JavaScript ausgeführt: nein
-- Formulare, Anhänge, Annotationen und Bilder exportiert: nein
-- Textausgabe als aktives HTML gerendert: nein
+- Title: ${safeMarkdownText(summary.title)}
+- Pages processed: ${summary.units}
+- External network content loaded: no
+- PDF JavaScript executed: no
+- Forms, attachments, annotations, and images exported: no
+- Text output rendered as active HTML: no
 
-## Durchgesetzte Grenzen
+## Enforced limits
 
-- Eingabe: 80 MB
-- Seiten: 2.000
-- extrahierter Text pro Seite: 2 MB
-- extrahierter Text gesamt: 30 MB
-- isolierter Verarbeitungsprozess: 30 Sekunden
+- Input: 80 MB
+- Pages: 2,000
+- Extracted text per page: 2 MB
+- Total extracted text: 30 MB
+- Isolated conversion worker: 120 seconds
 
-## Einschränkungen
+## Limitations
 
-PDF speichert Layout statt semantischer Dokumentstruktur. Lesereihenfolge, Tabellen und
-Spalten können deshalb im Markdown Nacharbeit benötigen. Gescannte PDFs benötigen OCR,
-das diese Version bewusst nicht ausführt.
+PDF stores layout rather than semantic document structure. Reading order, tables, and columns
+may therefore need manual cleanup. Scanned PDFs require OCR, which this version does not perform.
 
-Die Härtung reduziert typische Risiken erheblich, ist aber keine mathematische Sicherheitsgarantie.
+The hardening substantially reduces common risks, but it is not a mathematical security guarantee.
 `
 }
 
@@ -155,7 +154,7 @@ export async function convertPdf(
   onProgress: ProgressReporter,
 ): Promise<ConversionResult> {
   const inputBytes = bytes.byteLength
-  onProgress({ percent: 8, label: 'PDF-Struktur wird isoliert geprüft' })
+  onProgress({ percent: 8, label: 'Checking the PDF structure in isolation' })
 
   const loadingTask = getDocument({
     data: bytes.slice(),
@@ -163,7 +162,7 @@ export async function convertPdf(
     useSystemFonts: false,
     useWorkerFetch: false,
     useWasm: false,
-    stopAtErrors: true,
+    stopAtErrors: false,
     maxImageSize: 0,
     isOffscreenCanvasSupported: false,
     isImageDecoderSupported: false,
@@ -178,7 +177,7 @@ export async function convertPdf(
   try {
     const document = await loadingTask.promise
     if (document.numPages < 1 || document.numPages > SECURITY_POLICY.maxPdfPages) {
-      throw new SecurityError('LIMIT_EXCEEDED', 'Das PDF überschreitet das Seitenlimit von 2.000 Seiten.')
+      throw new SecurityError('LIMIT_EXCEEDED', 'The PDF exceeds the 2,000-page limit.')
     }
 
     let info: unknown
@@ -200,27 +199,27 @@ export async function convertPdf(
       const pageText = pageTextToMarkdown(textContent.items)
       const pageBytes = new TextEncoder().encode(pageText).byteLength
       if (pageBytes > SECURITY_POLICY.maxPdfPageTextBytes) {
-        throw new SecurityError('LIMIT_EXCEEDED', `Seite ${pageNumber} überschreitet das Textlimit.`)
+        throw new SecurityError('LIMIT_EXCEEDED', `Page ${pageNumber} exceeds the extracted-text limit.`)
       }
       extractedBytes += pageBytes
       if (extractedBytes > SECURITY_POLICY.maxPdfTextBytes) {
-        throw new SecurityError('LIMIT_EXCEEDED', 'Der extrahierte PDF-Text überschreitet das Gesamtlimit.')
+        throw new SecurityError('LIMIT_EXCEEDED', 'The extracted PDF text exceeds the total size limit.')
       }
 
-      if (!pageText) warnings.push(`Seite ${pageNumber} enthält keine extrahierbare Textebene.`)
-      pageSections.push(`## Seite ${pageNumber}\n\n${pageText || '[Keine extrahierbare Textebene]'}`)
+      if (!pageText) warnings.push(`Page ${pageNumber} has no extractable text layer.`)
+      pageSections.push(`## Page ${pageNumber}\n\n${pageText || '[No extractable text layer]'}`)
       page.cleanup()
 
       onProgress({
         percent: 20 + Math.round((pageNumber / document.numPages) * 68),
-        label: `Seite ${pageNumber} von ${document.numPages} wird extrahiert`,
+        label: `Extracting page ${pageNumber} of ${document.numPages}`,
       })
     }
 
     const header = [
       `# ${safeMarkdownText(title)}`,
-      author ? `**Autor:in:** ${safeMarkdownText(author)}` : '',
-      '**Quelle:** lokaler PDF-Textexport',
+      author ? `**Author:** ${safeMarkdownText(author)}` : '',
+      '**Source:** local PDF text extraction',
     ].filter(Boolean).join('\n\n')
     const markdown = `${header}\n\n---\n\n${pageSections.join('\n\n---\n\n')}\n`
 
@@ -229,7 +228,7 @@ export async function convertPdf(
       title,
       ...(author ? { author } : {}),
       units: document.numPages,
-      unitLabel: 'Seiten',
+      unitLabel: 'pages',
       assets: 0,
       inputBytes,
       processedBytes: extractedBytes,
@@ -241,13 +240,13 @@ export async function convertPdf(
       'SECURITY-REPORT.md': strToU8(reportMarkdown(provisionalSummary, sourceName)),
     }
 
-    onProgress({ percent: 94, label: 'Sicheres Markdown-Paket wird erstellt' })
+    onProgress({ percent: 94, label: 'Building the passive Markdown bundle' })
     const resultArchive = zipSync(files, { level: 6, mtime: new Date('2026-01-01T00:00:00Z') })
     if (resultArchive.byteLength > SECURITY_POLICY.maxOutputBytes) {
-      throw new SecurityError('LIMIT_EXCEEDED', 'Das Exportpaket überschreitet das Ausgabelimit.')
+      throw new SecurityError('LIMIT_EXCEEDED', 'The export bundle exceeds the output size limit.')
     }
 
-    onProgress({ percent: 100, label: 'Konvertierung abgeschlossen' })
+    onProgress({ percent: 100, label: 'Conversion complete' })
 
     return {
       archive: resultArchive,
@@ -258,10 +257,10 @@ export async function convertPdf(
   } catch (error) {
     if (error instanceof SecurityError) throw error
     if (error instanceof PasswordException) {
-      throw new SecurityError('UNSUPPORTED_DOCUMENT', 'Passwortgeschützte PDFs werden nicht verarbeitet.')
+      throw new SecurityError('UNSUPPORTED_DOCUMENT', 'Password-protected PDFs are not supported.')
     }
     if (error instanceof InvalidPDFException) {
-      throw new SecurityError('INVALID_DOCUMENT', 'Das PDF ist beschädigt oder ungültig.')
+      throw new SecurityError('INVALID_DOCUMENT', 'The PDF is damaged or invalid.')
     }
     throw error
   } finally {

@@ -21,7 +21,6 @@ const IGNORED_ELEMENTS = [
   'link',
   'meta',
   'base',
-  'svg',
   'math',
   'video',
   'audio',
@@ -36,6 +35,8 @@ export interface MarkdownResult {
   readonly warnings: readonly string[]
 }
 
+type InlineSvgExporter = (svg: string, alt: string) => string | null
+
 function escapeLabel(value: string): string {
   return value
     .replace(/[\u0000-\u001f\u007f]/gu, ' ')
@@ -49,6 +50,7 @@ export function xhtmlToSafeMarkdown(
   html: string,
   chapterPath: string,
   imageTargets: ReadonlyMap<string, string>,
+  exportInlineSvg?: InlineSvgExporter,
 ): MarkdownResult {
   const warnings: string[] = []
   const baseDirectory = archiveDirname(chapterPath)
@@ -67,33 +69,42 @@ export function xhtmlToSafeMarkdown(
     },
     {
       img: ({ node }) => {
-        const alt = escapeLabel(node.getAttribute('alt') ?? 'Bild') || 'Bild'
+        const alt = escapeLabel(node.getAttribute('alt') ?? 'Image') || 'Image'
         const source = node.getAttribute('src')?.trim() ?? ''
         if (!source || source.startsWith('//') || EXTERNAL_SCHEME.test(source)) {
-          warnings.push('Ein externes oder eingebettetes Bild wurde entfernt.')
-          return { content: `[Bild entfernt: ${alt}]`, recurse: false }
+          warnings.push('Removed an external or embedded image.')
+          return { content: `[Image removed: ${alt}]`, recurse: false }
         }
 
         try {
           const archivePath = resolveArchiveReference(baseDirectory, source)
           const outputPath = imageTargets.get(archivePath)
           if (!outputPath) {
-            warnings.push('Ein nicht unterstütztes oder fehlendes Bild wurde entfernt.')
-            return { content: `[Bild entfernt: ${alt}]`, recurse: false }
+            warnings.push('Removed an unsupported or missing image.')
+            return { content: `[Image removed: ${alt}]`, recurse: false }
           }
           return { content: `![${alt}](${outputPath})`, recurse: false }
         } catch (error) {
           if (!(error instanceof SecurityError)) throw error
-          warnings.push('Ein Bild mit unsicherem Pfad wurde entfernt.')
-          return { content: `[Bild entfernt: ${alt}]`, recurse: false }
+          warnings.push('Removed an image with an unsafe path.')
+          return { content: `[Image removed: ${alt}]`, recurse: false }
         }
+      },
+      svg: ({ node }) => {
+        const alt = escapeLabel(node.querySelector('title')?.text ?? node.getAttribute('aria-label') ?? 'Inline SVG') || 'Inline SVG'
+        const outputPath = exportInlineSvg?.(node.outerHTML, alt)
+        if (!outputPath) {
+          warnings.push('Removed an inline SVG that could not be sanitized safely.')
+          return { content: `[Image removed: ${alt}]`, recurse: false }
+        }
+        return { content: `![${alt}](${outputPath})`, recurse: false }
       },
       a: ({ node }) => {
         const href = node.getAttribute('href')?.trim() ?? ''
         if (SAFE_FRAGMENT.test(href)) {
           return { prefix: '[', postfix: `](${href})` }
         }
-        if (href) warnings.push('Ein externer oder dateiübergreifender Link wurde entlinkt.')
+        if (href) warnings.push('Unlinked an external or cross-file link.')
         return { prefix: '', postfix: '' }
       },
     },
@@ -101,8 +112,8 @@ export function xhtmlToSafeMarkdown(
 
   const hardened = markdown
     .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/gu, '')
-    .replace(/\b(?:https?|ftp):\/\/[^\s<>)\]]+/giu, '[externe URL entfernt]')
-    .replace(/\b(?:javascript|vbscript|data|file):[^\s<>)\]]*/giu, '[unsichere URL entfernt]')
+    .replace(/\b(?:https?|ftp):\/\/[^\s<>)\]]+/giu, '[external URL removed]')
+    .replace(/\b(?:javascript|vbscript|data|file):[^\s<>)\]]*/giu, '[unsafe URL removed]')
     .replace(/</gu, '&lt;')
     .replace(/>/gu, '&gt;')
     .replace(/\n{3,}/gu, '\n\n')

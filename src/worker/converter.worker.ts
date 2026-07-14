@@ -20,7 +20,7 @@ async function handleRequest(value: unknown): Promise<void> {
     const response: WorkerResponse = {
       type: 'error',
       code: 'CONVERSION_FAILED',
-      message: 'Der Konvertierungsauftrag war ungültig.',
+      message: 'The conversion request was invalid.',
     }
     workerScope.postMessage(response)
     return

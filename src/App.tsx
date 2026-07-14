@@ -1,5 +1,6 @@
 import { useReducer, useRef, type SVGProps } from 'react'
 import type { ConversionProgress, ConversionResult } from './core/convert'
+import type { SecurityErrorCode } from './core/errors'
 import { formatBytes, SECURITY_POLICY } from './core/policy'
 import { runConversion, WorkerConversionError } from './worker/runConversion'
 
@@ -8,7 +9,7 @@ type AppState =
   | { readonly kind: 'ready'; readonly dragging: boolean; readonly file: File }
   | { readonly kind: 'running'; readonly dragging: false; readonly file: File; readonly progress: ConversionProgress }
   | { readonly kind: 'success'; readonly dragging: boolean; readonly file: File; readonly result: ConversionResult }
-  | { readonly kind: 'error'; readonly dragging: boolean; readonly file: File | null; readonly message: string }
+  | { readonly kind: 'error'; readonly dragging: boolean; readonly file: File | null; readonly code: SecurityErrorCode; readonly message: string }
 
 type AppAction =
   | { readonly type: 'drag'; readonly active: boolean }
@@ -16,7 +17,7 @@ type AppAction =
   | { readonly type: 'start' }
   | { readonly type: 'progress'; readonly progress: ConversionProgress }
   | { readonly type: 'success'; readonly result: ConversionResult }
-  | { readonly type: 'failure'; readonly file: File | null; readonly message: string }
+  | { readonly type: 'failure'; readonly file: File | null; readonly code: SecurityErrorCode; readonly message: string }
   | { readonly type: 'cancelled' }
   | { readonly type: 'reset' }
 
@@ -30,7 +31,7 @@ function reducer(state: AppState, action: AppAction): AppState {
       return { kind: 'ready', dragging: false, file: action.file }
     case 'start':
       return state.kind === 'ready'
-        ? { kind: 'running', dragging: false, file: state.file, progress: { percent: 2, label: 'Datei wird eingelesen' } }
+        ? { kind: 'running', dragging: false, file: state.file, progress: { percent: 2, label: 'Reading the file' } }
         : state
     case 'progress':
       return state.kind === 'running' ? { ...state, progress: action.progress } : state
@@ -39,7 +40,7 @@ function reducer(state: AppState, action: AppAction): AppState {
         ? { kind: 'success', dragging: false, file: state.file, result: action.result }
         : state
     case 'failure':
-      return { kind: 'error', dragging: false, file: action.file, message: action.message }
+      return { kind: 'error', dragging: false, file: action.file, code: action.code, message: action.message }
     case 'cancelled':
       return state.kind === 'running' ? { kind: 'ready', dragging: false, file: state.file } : state
     case 'reset':
@@ -73,14 +74,16 @@ function DownloadIcon(props: SVGProps<SVGSVGElement>) {
   )
 }
 
-function selectError(file: File): string | null {
-  if (file.size === 0) return 'Die ausgewählte Datei ist leer.'
-  if (file.size > SECURITY_POLICY.maxInputBytes) return 'Die Datei ist größer als das Sicherheitslimit von 80 MB.'
+function selectError(file: File): { readonly code: SecurityErrorCode; readonly message: string } | null {
+  if (file.size === 0) return { code: 'INVALID_DOCUMENT', message: 'The selected file is empty.' }
+  if (file.size > SECURITY_POLICY.maxInputBytes) {
+    return { code: 'LIMIT_EXCEEDED', message: 'The file exceeds the 80 MB input limit.' }
+  }
   return null
 }
 
 function fileBadge(file: File): string {
-  return file.name.toLocaleLowerCase('en-US').endsWith('.pdf') ? 'PDF' : 'EP'
+  return file.name.toLocaleLowerCase('en-US').endsWith('.pdf') ? 'PDF' : 'EPUB'
 }
 
 export function App() {
@@ -91,7 +94,7 @@ export function App() {
     if (!file || state.kind === 'running') return
     const error = selectError(file)
     if (error) {
-      dispatch({ type: 'failure', file, message: error })
+      dispatch({ type: 'failure', file, code: error.code, message: error.message })
       return
     }
     dispatch({ type: 'select', file })
@@ -115,8 +118,9 @@ export function App() {
       if (error instanceof DOMException && error.name === 'AbortError') {
         dispatch({ type: 'cancelled' })
       } else {
-        const message = error instanceof WorkerConversionError ? error.message : 'Die Datei konnte nicht sicher konvertiert werden.'
-        dispatch({ type: 'failure', file, message })
+        const code = error instanceof WorkerConversionError ? error.code : 'CONVERSION_FAILED'
+        const message = error instanceof WorkerConversionError ? error.message : 'The file could not be converted safely.'
+        dispatch({ type: 'failure', file, code, message })
       }
     } finally {
       if (controllerRef.current === controller) controllerRef.current = null
@@ -149,34 +153,34 @@ export function App() {
   return (
     <div className="app-shell">
       <header className="topbar">
-        <a className="brand" href="#main" aria-label="Book2Markdown – zum Hauptinhalt">
+        <a className="brand" href="#main" aria-label="Book2Markdown — skip to main content">
           <span className="brand-mark"><ShieldIcon /></span>
           <span>Book2<strong>Markdown</strong></span>
         </a>
-        <div className="local-badge"><span />100 % lokal</div>
+        <div className="local-badge"><span />100% local</div>
       </header>
 
       <main id="main">
         <section className="hero" aria-labelledby="hero-title">
           <div className="eyebrow"><ShieldIcon /> EPUB &amp; PDF · hardened local conversion</div>
-          <h1 id="hero-title">Ebooks rein.<br /><span>Markdown raus.</span></h1>
+          <h1 id="hero-title">Ebooks in.<br /><span>Markdown out.</span></h1>
           <p className="hero-copy">
-            EPUBs und PDFs werden lokal in sauberes Markdown verwandelt. Kein Upload, kein Nachladen,
-            kein aktives HTML – nur dein Dokument und ein isolierter Worker mit harten Sicherheitslimits.
+            Convert EPUB and PDF ebooks locally into clean Markdown. No uploads, no remote loading,
+            no active HTML — just your document in an isolated worker with strict safety limits.
           </p>
 
-          <div className="trust-row" aria-label="Sicherheitsmerkmale">
-            <span><i>01</i> Netzwerk blockiert</span>
-            <span><i>02</i> Harte Ressourcenlimits</span>
-            <span><i>03</i> Aktive Inhalte gesperrt</span>
+          <div className="trust-row" aria-label="Security features">
+            <span><i>01</i> Network blocked</span>
+            <span><i>02</i> Resource limits</span>
+            <span><i>03</i> Graphics preserved safely</span>
           </div>
         </section>
 
-        <section className="studio-card" aria-label="Ebook-Konvertierung">
+        <section className="studio-card" aria-label="Ebook conversion">
           <div className="studio-heading">
             <div>
-              <p className="section-label">Lokale Werkbank</p>
-              <h2>Ebook auswählen</h2>
+              <p className="section-label">Local studio</p>
+              <h2>Choose an ebook</h2>
             </div>
             <span className="limit-label">max. 80 MB</span>
           </div>
@@ -202,8 +206,8 @@ export function App() {
               }}
             />
             <span className="upload-orbit"><UploadIcon /></span>
-            <strong>{state.dragging ? 'Hier loslassen' : 'EPUB oder PDF hierher ziehen'}</strong>
-            <span>oder klicken, um ein Ebook auszuwählen</span>
+            <strong>{state.dragging ? 'Drop it here' : 'Drop an EPUB or PDF here'}</strong>
+            <span>or click to choose an ebook</span>
           </label>
 
           {currentFile && (
@@ -211,10 +215,10 @@ export function App() {
               <div className="file-icon">{fileBadge(currentFile)}</div>
               <div className="file-details">
                 <strong>{currentFile.name}</strong>
-                <span>{formatBytes(currentFile.size)} · bleibt lokal</span>
+                <span>{formatBytes(currentFile.size)} · stays on this device</span>
               </div>
               {state.kind !== 'running' && (
-                <button className="text-button" type="button" onClick={() => dispatch({ type: 'reset' })}>Entfernen</button>
+                <button className="text-button" type="button" onClick={() => dispatch({ type: 'reset' })}>Remove</button>
               )}
             </div>
           )}
@@ -222,7 +226,7 @@ export function App() {
           <div className="status-region" aria-live="polite">
             {state.kind === 'ready' && (
               <button className="primary-button" type="button" onClick={() => void startConversion()}>
-                <ShieldIcon /> Sicher konvertieren
+                <ShieldIcon /> Convert safely
               </button>
             )}
 
@@ -235,15 +239,15 @@ export function App() {
                 <progress className="progress-track" value={state.progress.percent} max={100}>
                   {state.progress.percent} %
                 </progress>
-                <button className="text-button" type="button" onClick={cancelConversion}>Abbrechen</button>
+                <button className="text-button" type="button" onClick={cancelConversion}>Cancel</button>
               </div>
             )}
 
             {state.kind === 'error' && (
               <div className="message error-message" role="alert">
                 <span>!</span>
-                <div><strong>Datei sicher abgelehnt</strong><p>{state.message}</p></div>
-                {state.file && <button type="button" onClick={retryRejectedFile}>Erneut prüfen</button>}
+                <div><strong>File rejected · {state.code}</strong><p>{state.message}</p></div>
+                {state.file && <button type="button" onClick={retryRejectedFile}>Try again</button>}
               </div>
             )}
 
@@ -251,24 +255,24 @@ export function App() {
               <div className="result-panel">
                 <div className="result-title">
                   <span className="success-mark"><ShieldIcon /></span>
-                  <div><p className="section-label">Sicher exportiert</p><h3>{state.result.summary.title}</h3></div>
+                  <div><p className="section-label">Safely exported</p><h3>{state.result.summary.title}</h3></div>
                 </div>
                 <div className="metrics">
                   <div><strong>{state.result.summary.units}</strong><span>{state.result.summary.unitLabel}</span></div>
-                  <div><strong>{state.result.summary.assets}</strong><span>{state.result.summary.format === 'pdf' ? 'Anhänge' : 'Bilder'}</span></div>
-                  <div><strong>{formatBytes(state.result.summary.outputBytes)}</strong><span>Export</span></div>
+                  <div><strong>{state.result.summary.assets}</strong><span>images</span></div>
+                  <div><strong>{formatBytes(state.result.summary.outputBytes)}</strong><span>export</span></div>
                 </div>
                 {state.result.summary.warnings.length > 0 && (
                   <details className="warnings">
-                    <summary>{state.result.summary.warnings.length} Sicherheitshinweis(e)</summary>
+                    <summary>{state.result.summary.warnings.length} conversion warning(s)</summary>
                     <ul>{state.result.summary.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>
                   </details>
                 )}
                 <button className="primary-button" type="button" onClick={downloadResult}>
-                  <DownloadIcon /> Markdown-Paket laden
+                  <DownloadIcon /> Download Markdown bundle
                 </button>
                 <details className="preview">
-                  <summary>Textvorschau anzeigen</summary>
+                  <summary>Show text preview</summary>
                   <pre>{state.result.preview}</pre>
                 </details>
               </div>
@@ -279,18 +283,18 @@ export function App() {
         <section className="security-grid" aria-labelledby="security-title">
           <div className="security-intro">
             <p className="section-label">Threat model</p>
-            <h2 id="security-title">Misstrauen ist<br />hier ein Feature.</h2>
-            <p>Verdächtige EPUBs und PDFs werden abgelehnt, bevor aktive Inhalte die Oberfläche erreichen können.</p>
+            <h2 id="security-title">Distrust is<br />a feature.</h2>
+            <p>Suspicious parts are removed or quarantined before active content can reach the interface.</p>
           </div>
-          <article><span>01</span><h3>Isolierter Worker</h3><p>Die Konvertierung läuft getrennt vom UI und wird nach 30 Sekunden hart beendet.</p></article>
-          <article><span>02</span><h3>Harte Ressourcenlimits</h3><p>Pfade, Größen, Kompressionsrate, Seitenzahl, Textmenge und Laufzeit werden begrenzt.</p></article>
-          <article><span>03</span><h3>Passiver Export</h3><p>Skripte, Formulare, Anhänge, SVG, Remote-Links und aktive HTML-Fragmente bleiben draußen.</p></article>
+          <article><span>01</span><h3>Isolated worker</h3><p>Conversion runs away from the UI and is terminated after 120 seconds.</p></article>
+          <article><span>02</span><h3>Strict resource limits</h3><p>Paths, sizes, compression ratios, page counts, text volume, and runtime are bounded.</p></article>
+          <article><span>03</span><h3>Sanitized graphics</h3><p>Raster images are signature-checked; SVG scripts, events, remote sources, and active elements are stripped.</p></article>
         </section>
       </main>
 
       <footer>
         <span>Book2Markdown · Open Source · MIT</span>
-        <span>Verarbeitung ausschließlich im Browser</span>
+        <span>Processing happens entirely in your browser</span>
       </footer>
     </div>
   )

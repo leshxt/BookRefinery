@@ -10,7 +10,7 @@ make network connections.
 
 | Input | Output | Notes |
 |---|---|---|
-| EPUB 2/3 | `book.md`, individual chapters, safe raster assets | Follows the OPF spine and strips active content |
+| EPUB 2/3 | `book.md`, individual chapters, safe image assets | Preserves signature-checked raster images and allowlist-sanitized SVG |
 | Text-based PDF | `document.md`, separated by page | Extracts text only; no forms, attachments, scripts or images |
 
 Scanned PDFs need OCR, which is intentionally not part of the current release. PDF is a
@@ -44,8 +44,9 @@ when hosting it.
 EPUB exports contain:
 
 - `book.md` with the complete book;
-- one Markdown file per spine item under `chapters/`;
+- one Markdown file per text or visual spine item under `chapters/`;
 - signature-checked PNG, JPEG, GIF and WebP assets under `assets/`;
+- sanitized standalone and inline SVG assets, including safe local raster references;
 - `SECURITY-REPORT.md` with enforced limits and removed content.
 
 PDF exports contain `document.md` plus the security report. Images, file attachments,
@@ -55,13 +56,14 @@ annotations, forms and embedded JavaScript are not exported.
 
 Book2Markdown treats every input as hostile:
 
-- all parsing happens in a dedicated worker with a 30-second watchdog;
+- all parsing happens in a dedicated worker with a 120-second watchdog;
 - the production CSP includes `connect-src 'none'`;
 - ZIP paths, entry counts, sizes and compression ratios are checked before EPUB extraction;
-- XML DTD and entity declarations are rejected;
+- XML entities and internal DTD subsets are rejected; inert legacy XHTML doctypes are stripped;
 - PDF.js receives local bytes only, with fetching, rendering, XFA, system fonts and WASM disabled;
 - untrusted HTML or Markdown is never rendered in the application;
-- only passive Markdown and signature-checked raster files leave the converter.
+- SVG scripts, event handlers, remote or embedded sources, active elements and unsafe styles are removed;
+- only passive Markdown, signature-checked raster files and allowlist-sanitized SVG leave the converter.
 
 See [SECURITY.md](SECURITY.md) for the threat model and
 [docs/SECURITY-HARDENING.md](docs/SECURITY-HARDENING.md) for the changes compared with the

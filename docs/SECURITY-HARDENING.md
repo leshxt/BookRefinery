@@ -15,11 +15,12 @@ The baseline inspected on 14 July 2026 was upstream commit
 | Archive paths | No dedicated canonical path boundary | Rejects traversal, absolute paths, backslashes and case collisions |
 | XML | Entity processing remained reachable | Entities and DTD declarations rejected; entity processing disabled |
 | Remote resources | Optional localization fetched referenced URLs | No network feature; production CSP uses `connect-src 'none'` |
-| Active content | HTML became Markdown without a strict passive-output boundary | Scripts, frames, forms, SVG and dangerous URL schemes are removed |
-| UI isolation | Command-line process only | Parsing worker can be cancelled and is terminated after 30 seconds |
+| Active content | HTML became Markdown without a strict passive-output boundary | Scripts, frames, forms and dangerous URL schemes are removed; SVG is rebuilt from a passive allowlist |
+| UI isolation | Command-line process only | Parsing worker can be cancelled and is terminated after 120 seconds |
 | Preview | Not applicable | Plain-text preview; converted content never becomes DOM HTML |
 | Supply chain | Release commands used dynamically resolved tooling | Exact lockfile, SHA-pinned Actions and Dependabot |
-| Format scope | EPUB | EPUB plus text-based PDF |
+| Image handling | Referenced files could pass through without format-specific sanitization | Raster signatures are verified; SVG scripts, events, active elements and unsafe references are stripped |
+| Format scope | EPUB | EPUB 2/3 including visual SVG/raster spine items, plus text-based PDF |
 
 ## PDF-specific design
 
@@ -30,10 +31,20 @@ and WASM are disabled, and the outer worker remains subject to the same watchdog
 This approach favors a smaller attack surface over visual fidelity. It will not reproduce page
 layout and does not attempt OCR.
 
+## SVG-specific design
+
+SVG is XML and can also be active web content. Book2Markdown therefore never copies an SVG
+verbatim. It parses the file with entity processing disabled, keeps only passive drawing, text,
+gradient, clipping and grouping elements, filters attributes and styles, and rewrites references
+only when they resolve to a signature-checked local raster asset. Unsupported nodes are removed
+with a warning; a malformed or structurally unsafe SVG is omitted without rejecting otherwise
+convertible book content.
+
 ## Verification
 
 The automated suite covers normal conversion plus traversal paths, duplicate archive names,
-extreme compression, XML entities, active HTML, remote URLs and PDF text extraction. The full
+extreme compression, XML entities, legacy EPUB 2 doctypes, active HTML, hostile SVG, visual SVG
+spine items, remote URLs and PDF text extraction. The full
 gate is:
 
 ```text

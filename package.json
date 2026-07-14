@@ -1,7 +1,7 @@
 {
   "name": "book2markdown",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Local-first hardened EPUB and PDF to Markdown converter.",
   "homepage": "https://github.com/leshxt/Book2Markdown#readme",
   "repository": {

@@ -21,8 +21,22 @@ export function publicError(error: unknown): { code: SecurityErrorCode; message:
     return { code: error.code, message: error.message }
   }
 
+  if (error instanceof Error) {
+    const detail = error.message
+      .replace(/[\u0000-\u001f\u007f]/gu, ' ')
+      .replace(/\s+/gu, ' ')
+      .trim()
+      .slice(0, 300)
+    if (detail) {
+      return {
+        code: 'CONVERSION_FAILED',
+        message: `The isolated converter failed: ${detail}`,
+      }
+    }
+  }
+
   return {
     code: 'CONVERSION_FAILED',
-    message: 'Die Datei konnte nicht sicher verarbeitet werden.',
+    message: 'The file could not be processed safely.',
   }
 }

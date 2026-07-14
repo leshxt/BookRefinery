@@ -3,9 +3,10 @@
 Book2Markdown aims to become a focused, local ebook-to-Markdown converter without weakening
 its privacy and hostile-input boundaries.
 
-## Current: 0.2
+## Current: 0.3
 
 - Hardened EPUB 2/3 conversion
+- Signature-checked raster graphics and allowlist-sanitized SVG, including visual spine items
 - Text-based PDF conversion
 - Chapter/page separation and security report
 - Local browser UI with no backend
@@ -17,6 +18,7 @@ its privacy and hostile-input boundaries.
 - Batch conversion with independent limits per document
 - Reproducible downloadable desktop packaging
 - More adversarial corpus and fuzz testing
+- Optional safe PDF figure or page-image extraction after a dedicated rendering threat review
 
 ## Investigations
 

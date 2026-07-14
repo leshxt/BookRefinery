@@ -6,29 +6,29 @@ const WINDOWS_DRIVE = /^[a-z]:/i
 
 function validateSegments(path: string): void {
   if (path.length > SECURITY_POLICY.maxPathLength) {
-    throw new SecurityError('UNSAFE_ARCHIVE', 'Ein Archivpfad ist ungewöhnlich lang.')
+    throw new SecurityError('UNSAFE_ARCHIVE', 'An archive path is unusually long.')
   }
 
   for (const segment of path.split('/')) {
     if (segment.length > SECURITY_POLICY.maxPathSegmentLength) {
-      throw new SecurityError('UNSAFE_ARCHIVE', 'Ein Archivpfad enthält ein zu langes Segment.')
+      throw new SecurityError('UNSAFE_ARCHIVE', 'An archive path contains an unusually long segment.')
     }
   }
 }
 
 export function validateArchiveEntryName(input: string): string {
   if (!input || input.includes('\0') || input.includes('\\')) {
-    throw new SecurityError('UNSAFE_ARCHIVE', 'Das Archiv enthält einen unsicheren Dateipfad.')
+    throw new SecurityError('UNSAFE_ARCHIVE', 'The archive contains an unsafe file path.')
   }
 
   if (input.startsWith('/') || input.startsWith('//') || WINDOWS_DRIVE.test(input)) {
-    throw new SecurityError('UNSAFE_ARCHIVE', 'Absolute Dateipfade sind im EPUB nicht erlaubt.')
+    throw new SecurityError('UNSAFE_ARCHIVE', 'Absolute file paths are not allowed in EPUB files.')
   }
 
   const withoutTrailingSlash = input.endsWith('/') ? input.slice(0, -1) : input
   const segments = withoutTrailingSlash.split('/')
   if (segments.some((segment) => segment === '' || segment === '.' || segment === '..')) {
-    throw new SecurityError('UNSAFE_ARCHIVE', 'Das Archiv versucht, Verzeichnisgrenzen zu umgehen.')
+    throw new SecurityError('UNSAFE_ARCHIVE', 'The archive attempts to escape a directory boundary.')
   }
 
   const normalized = withoutTrailingSlash.normalize('NFC')
@@ -48,7 +48,7 @@ export function resolveArchiveReference(baseDirectory: string, reference: string
   try {
     decoded = decodeURIComponent(pathOnly)
   } catch {
-    throw new SecurityError('UNSAFE_ARCHIVE', 'Das EPUB enthält einen ungültig codierten Verweis.')
+    throw new SecurityError('UNSAFE_ARCHIVE', 'The EPUB contains an invalid encoded reference.')
   }
 
   if (
@@ -60,7 +60,7 @@ export function resolveArchiveReference(baseDirectory: string, reference: string
     WINDOWS_DRIVE.test(decoded) ||
     URI_SCHEME.test(decoded)
   ) {
-    throw new SecurityError('UNSAFE_ARCHIVE', 'Das EPUB enthält einen externen oder unsicheren Verweis.')
+    throw new SecurityError('UNSAFE_ARCHIVE', 'The EPUB contains an external or unsafe reference.')
   }
 
   const output = baseDirectory ? baseDirectory.split('/') : []
@@ -68,7 +68,7 @@ export function resolveArchiveReference(baseDirectory: string, reference: string
     if (!segment || segment === '.') continue
     if (segment === '..') {
       if (output.length === 0) {
-        throw new SecurityError('UNSAFE_ARCHIVE', 'Ein EPUB-Verweis verlässt das Archiv.')
+        throw new SecurityError('UNSAFE_ARCHIVE', 'An EPUB reference escapes the archive.')
       }
       output.pop()
       continue

@@ -14,7 +14,7 @@ is impossible.
 
 ### All documents
 
-- Conversion runs in a dedicated Web Worker with cancellation and a 30-second watchdog.
+- Conversion runs in a dedicated Web Worker with cancellation and a 120-second watchdog.
 - Input is capped at 80 MB and generated output at 300 MB.
 - Untrusted HTML/Markdown is never rendered; the UI preview is plain text.
 - The production CSP blocks `connect`, frames, objects, forms and non-local scripts.
@@ -25,9 +25,12 @@ is impossible.
 - A ZIP entry is capped at 25 MB, total unpacked data at 250 MB and entries at 5,000.
 - Per-entry compression ratio is capped at 100:1.
 - Absolute, ambiguous, traversal and case-colliding ZIP paths are rejected.
-- XML DTD and entity declarations are rejected before parsing.
-- Scripts, forms, frames, embedded objects, SVG and remote resources are omitted.
-- Only signature-checked PNG, JPEG, GIF and WebP assets are exported.
+- XML entities and internal DTD subsets are rejected before parsing; inert legacy XHTML doctypes are stripped.
+- Scripts, forms, frames, embedded objects and remote resources are omitted.
+- PNG, JPEG, GIF and WebP assets are exported only after their signatures match the declared type.
+- Standalone, inline and reading-order SVG are rebuilt from a passive allowlist. Scripts, event
+  handlers, `foreignObject`, animation/filter elements, unsafe styles and external or embedded
+  references are removed. Safe references to local signature-checked raster assets are rewritten.
 
 ### PDF
 
@@ -44,7 +47,8 @@ is impossible.
   per-worker memory quota.
 - PDF text order is heuristic because PDF stores positioned glyphs rather than semantic blocks.
 - No OCR is performed; scanned pages produce a warning instead of text.
-- Raster image decoders remain part of the consumer's eventual Markdown viewer, not this app.
+- Raster image decoders and the SVG renderer remain part of the consumer's eventual Markdown
+  viewer, not this app. Sanitization reduces active-content risk but does not rasterize SVG.
 
 For exceptionally hostile material, additionally use an updated disposable browser profile
 or virtual machine.

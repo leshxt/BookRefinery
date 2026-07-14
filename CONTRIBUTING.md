@@ -7,6 +7,16 @@ Thanks for helping improve Book2Markdown.
 3. Add a regression test for parser, path, limit or sanitization changes.
 4. Run `npm run verify` before opening a pull request.
 
+Optional real-world corpus checks can be run without committing ebook fixtures:
+
+```powershell
+$env:EPUB_SAMPLE_DIR = 'C:\path\to\epub-samples'
+$env:PDF_SAMPLE_FILE = 'C:\path\to\sample.pdf'
+npm run test
+```
+
+The corresponding manual suites are skipped when those environment variables are absent.
+
 Do not add remote font, analytics, telemetry, CDN or document-upload dependencies. Any feature
 that renders source HTML, PDF pages or generated Markdown needs an explicit security review.
 

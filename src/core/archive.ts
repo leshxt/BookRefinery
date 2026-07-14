@@ -18,13 +18,13 @@ function assertZipSignature(bytes: Uint8Array): void {
     (bytes[3] === 0x04 || bytes[3] === 0x06 || bytes[3] === 0x08)
 
   if (!isZip) {
-    throw new SecurityError('INVALID_DOCUMENT', 'Die Datei ist kein gültiges ZIP-basiertes EPUB.')
+    throw new SecurityError('INVALID_DOCUMENT', 'The file is not a valid ZIP-based EPUB.')
   }
 }
 
 export function openSecureArchive(bytes: Uint8Array): SecureArchive {
   if (bytes.byteLength > SECURITY_POLICY.maxInputBytes) {
-    throw new SecurityError('LIMIT_EXCEEDED', 'Das EPUB überschreitet das Eingabelimit von 80 MB.')
+    throw new SecurityError('LIMIT_EXCEEDED', 'The EPUB exceeds the 80 MB input limit.')
   }
   assertZipSignature(bytes)
 
@@ -35,31 +35,34 @@ export function openSecureArchive(bytes: Uint8Array): SecureArchive {
   const filter = (file: UnzipFileInfo): boolean => {
     entryCount += 1
     if (entryCount > SECURITY_POLICY.maxEntries) {
-      throw new SecurityError('LIMIT_EXCEEDED', 'Das EPUB enthält zu viele Archiveinträge.')
+      throw new SecurityError('LIMIT_EXCEEDED', 'The EPUB contains too many archive entries.')
     }
 
     const path = validateArchiveEntryName(file.name)
     const comparisonKey = path.toLocaleLowerCase('en-US')
     if (seen.has(comparisonKey)) {
-      throw new SecurityError('UNSAFE_ARCHIVE', 'Das EPUB enthält mehrdeutige doppelte Dateipfade.')
+      throw new SecurityError('UNSAFE_ARCHIVE', 'The EPUB contains ambiguous duplicate file paths.')
     }
     seen.add(comparisonKey)
 
     if (!Number.isSafeInteger(file.originalSize) || file.originalSize < 0) {
-      throw new SecurityError('UNSAFE_ARCHIVE', 'Das EPUB meldet eine ungültige Dateigröße.')
+      throw new SecurityError('UNSAFE_ARCHIVE', 'The EPUB reports an invalid file size.')
     }
     if (file.originalSize > SECURITY_POLICY.maxEntryBytes) {
-      throw new SecurityError('LIMIT_EXCEEDED', `Der Archiveintrag „${path}“ ist zu groß.`)
+      throw new SecurityError('LIMIT_EXCEEDED', `Archive entry "${path}" is too large.`)
     }
 
     declaredBytes += file.originalSize
     if (declaredBytes > SECURITY_POLICY.maxTotalUncompressedBytes) {
-      throw new SecurityError('LIMIT_EXCEEDED', 'Das entpackte EPUB würde das Gesamtlimit überschreiten.')
+      throw new SecurityError('LIMIT_EXCEEDED', 'The unpacked EPUB would exceed the total size limit.')
     }
 
     const ratio = file.originalSize / Math.max(file.size, 1)
-    if (ratio > SECURITY_POLICY.maxCompressionRatio) {
-      throw new SecurityError('UNSAFE_ARCHIVE', `Der Archiveintrag „${path}“ ist verdächtig stark komprimiert.`)
+    if (
+      file.originalSize >= SECURITY_POLICY.minCompressionRatioCheckBytes &&
+      ratio > SECURITY_POLICY.maxCompressionRatio
+    ) {
+      throw new SecurityError('UNSAFE_ARCHIVE', `Archive entry "${path}" has a suspicious compression ratio.`)
     }
 
     return !file.name.endsWith('/')
@@ -70,7 +73,7 @@ export function openSecureArchive(bytes: Uint8Array): SecureArchive {
     unpacked = unzipSync(bytes, { filter })
   } catch (error) {
     if (error instanceof SecurityError) throw error
-    throw new SecurityError('INVALID_DOCUMENT', 'Das ZIP-Archiv ist beschädigt oder nutzt ein nicht unterstütztes Verfahren.')
+    throw new SecurityError('INVALID_DOCUMENT', 'The ZIP archive is damaged or uses an unsupported compression method.')
   }
 
   const entries = new Map<string, Uint8Array>()
@@ -79,7 +82,7 @@ export function openSecureArchive(bytes: Uint8Array): SecureArchive {
     const path = validateArchiveEntryName(rawPath)
     actualBytes += data.byteLength
     if (data.byteLength > SECURITY_POLICY.maxEntryBytes || actualBytes > SECURITY_POLICY.maxTotalUncompressedBytes) {
-      throw new SecurityError('LIMIT_EXCEEDED', 'Das tatsächlich entpackte EPUB überschreitet ein Sicherheitslimit.')
+      throw new SecurityError('LIMIT_EXCEEDED', 'The unpacked EPUB exceeds a security limit.')
     }
     entries.set(path, data)
   }
