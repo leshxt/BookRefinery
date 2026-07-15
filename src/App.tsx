@@ -270,8 +270,8 @@ export function App() {
                 )}
                 {state.result.summary.format === 'epub' && (
                   <div className="llm-ready-note">
-                    <strong>Multimodal notebook package included</strong>
-                    <span>Import <code>notebooklm/book.md</code> together with <code>book.sanitized.epub</code> to keep text, graphics, and reading positions synchronized.</span>
+                    <strong>NotebookLM-ready visual EPUB included</strong>
+                    <span>Start with <code>notebooklm/book.sanitized.epub</code>. It already contains the text and sanitized graphics in reading order; <code>book.md</code> is an optional text-only fallback.</span>
                   </div>
                 )}
                 <button className="primary-button" type="button" onClick={downloadResult}>

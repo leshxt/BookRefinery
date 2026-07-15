@@ -55,12 +55,15 @@ annotations, forms and embedded JavaScript are not exported.
 
 ## NotebookLM and multimodal LLMs
 
-For an illustrated EPUB, import these two files from `notebooklm/` into the same notebook:
+For NotebookLM, start with **`notebooklm/book.sanitized.epub` only**. It is the primary source and
+already contains the complete text plus the actual sanitized graphics at matching `FIG-xxxx`
+positions without copying the source EPUB's scripts, forms, remote resources or original HTML.
+Using one source avoids duplicate passages and competing citations.
 
-1. `book.md` provides normalized heading levels, metadata, a table of contents, retained
-   cross-chapter references and figure markers in the exact text flow.
-2. `book.sanitized.epub` provides the actual sanitized graphics at matching `FIG-xxxx`
-   positions without copying the source EPUB's scripts, forms, remote resources or original HTML.
+`notebooklm/book.md` is an optional text-only fallback. Add it only when EPUB text retrieval or
+citations are incomplete, or when another target tool does not accept EPUB. It provides normalized
+heading levels, metadata, a table of contents, retained cross-chapter references and figure markers.
+Do not select both sources by default.
 
 `FIGURE-INDEX.md` maps every graphic to its chapter, caption or alt text, nearby text and safe
 asset. Graphics present in the EPUB package but absent from the readable spine are retained in a

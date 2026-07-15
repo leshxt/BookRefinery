@@ -145,6 +145,7 @@ describe('secure EPUB conversion', () => {
     const output = unzipSync(result.archive)
     const llmBook = strFromU8(output['notebooklm/book.md']!)
     const figureIndex = strFromU8(output['notebooklm/FIGURE-INDEX.md']!)
+    const notebookGuide = strFromU8(output['notebooklm/README.md']!)
     const visualEpub = unzipSync(output['notebooklm/book.sanitized.epub']!)
     const visualChapterPath = Object.keys(visualEpub).find((path) => path.startsWith('EPUB/text/chapter-'))
 
@@ -154,6 +155,8 @@ describe('secure EPUB conversion', () => {
     expect(llmBook.indexOf('FIG\\-0001')).toBeLessThan(llmBook.indexOf('After the diagram.'))
     expect(figureIndex).toContain('CHAPTER\\-001 Chapter one')
     expect(figureIndex).toContain('Flow chart — Decision path')
+    expect(notebookGuide).toContain('Start with **`book.sanitized.epub` only**')
+    expect(notebookGuide).toContain('Do not select both by default')
     expect(strFromU8(visualEpub['mimetype']!)).toBe('application/epub+zip')
     expect(readEpubPackage(openSecureArchive(output['notebooklm/book.sanitized.epub']!).entries).title).toContain('Sicheres Testbuch')
     expect(Object.keys(visualEpub)).toContain('EPUB/assets/FIG-0001-cover.png')
