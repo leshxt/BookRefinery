@@ -107,6 +107,10 @@ main { padding-bottom: 90px; }
 .warnings, .preview { margin: 16px 0; color: #b8c9c1; font-size: .82rem; }
 .warnings summary, .preview summary { cursor: pointer; }
 .warnings li { margin-block: 7px; }
+.llm-ready-note { display: grid; gap: 6px; margin: 16px 0; padding: 14px 16px; border: 1px solid rgba(44,220,146,.28); border-radius: 11px; background: rgba(44,220,146,.07); }
+.llm-ready-note strong { color: #d6f8e8; font-size: .88rem; }
+.llm-ready-note span { color: #a9beb5; font-size: .78rem; line-height: 1.55; }
+.llm-ready-note code { color: #d6f8e8; font-size: .74rem; }
 .preview pre { max-height: 320px; overflow: auto; padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: #07100e; color: #b9cec4; white-space: pre-wrap; font: .76rem/1.6 ui-monospace, monospace; }
 
 .security-grid { display: grid; grid-template-columns: 1.25fr repeat(3, 1fr); gap: 1px; margin-top: 90px; border: 1px solid var(--line); border-radius: 22px; overflow: hidden; background: var(--line); }

@@ -2,6 +2,13 @@ import { strToU8, zipSync } from 'fflate'
 import { openSecureArchive } from './archive'
 import { readEpubPackage, type ManifestItem } from './epub'
 import { SecurityError } from './errors'
+import {
+  annotateMarkdownFigures,
+  buildLlmExport,
+  type FigureOccurrence,
+  type LlmAsset,
+  type LlmChapter,
+} from './llm'
 import { xhtmlToSafeMarkdown } from './markdown'
 import { archiveDirname, resolveArchiveReference, safeOutputName } from './path'
 import { convertPdf } from './pdf'
@@ -17,6 +24,9 @@ interface RasterDescriptor {
 interface AssetTarget {
   readonly outputPath: string
   readonly kind: 'raster' | 'svg'
+  readonly figureId: string
+  readonly mediaType: string
+  readonly defaultLabel: string
 }
 
 const RASTER_TYPES = new Map<string, RasterDescriptor>([
@@ -100,6 +110,8 @@ function reportMarkdown(summary: ConversionSummary, sourceName: string): string 
 - External network content loaded: no
 - XML entities allowed: no
 - Active HTML exported: no
+- Passive sanitized visual EPUB companion exported: yes
+- Stable figure IDs and reading positions recorded: yes
 
 ## Warnings
 
@@ -137,7 +149,12 @@ function assetBaseName(item: ManifestItem, fallback: string): string {
 
 function outputAssetPath(sequence: number, baseName: string, extension: string): string {
   const fallback = `image-${sequence}`
-  return `assets/${String(sequence).padStart(3, '0')}-${safeOutputName(baseName, fallback)}.${extension}`
+  const safeBaseName = safeOutputName(baseName, fallback).replace(/[()]/gu, '-')
+  return `assets/${figureId(sequence)}-${safeBaseName}.${extension}`
+}
+
+function figureId(sequence: number): string {
+  return `FIG-${String(sequence).padStart(4, '0')}`
 }
 
 function outputAssetName(outputPath: string): string | null {
@@ -157,6 +174,7 @@ export function convertEpub(
   const warnings = [...epub.warnings]
   const outputFiles: Record<string, Uint8Array> = {}
   const assetTargets = new Map<string, AssetTarget>()
+  const assetsByOutputPath = new Map<string, LlmAsset>()
   let assetSequence = 0
 
   for (const item of epub.manifest) {
@@ -170,8 +188,16 @@ export function convertEpub(
 
     assetSequence += 1
     const outputPath = outputAssetPath(assetSequence, assetBaseName(item, `image-${assetSequence}`), descriptor.extension)
-    assetTargets.set(item.path, { outputPath, kind: 'raster' })
+    const target: AssetTarget = {
+      outputPath,
+      kind: 'raster',
+      figureId: figureId(assetSequence),
+      mediaType: item.mediaType,
+      defaultLabel: assetBaseName(item, item.id),
+    }
+    assetTargets.set(item.path, target)
     outputFiles[outputPath] = data
+    assetsByOutputPath.set(outputPath, { ...target, data })
   }
 
   const resolveSvgImage = (svgPath: string, reference: string): string | null => {
@@ -197,8 +223,16 @@ export function convertEpub(
       const sanitized = sanitizeSvg(data, `SVG image "${item.id}"`, (reference) => resolveSvgImage(item.path, reference))
       assetSequence += 1
       const outputPath = outputAssetPath(assetSequence, assetBaseName(item, `image-${assetSequence}`), 'svg')
-      assetTargets.set(item.path, { outputPath, kind: 'svg' })
+      const target: AssetTarget = {
+        outputPath,
+        kind: 'svg',
+        figureId: figureId(assetSequence),
+        mediaType: 'image/svg+xml',
+        defaultLabel: assetBaseName(item, item.id),
+      }
+      assetTargets.set(item.path, target)
       outputFiles[outputPath] = sanitized.content
+      assetsByOutputPath.set(outputPath, { ...target, data: sanitized.content })
       warnings.push(...sanitized.warnings.map((warning) => `SVG "${item.id}": ${warning}`))
     } catch (error) {
       if (!(error instanceof SecurityError)) throw error
@@ -208,9 +242,12 @@ export function convertEpub(
 
   const imageTargets = new Map([...assetTargets].map(([path, target]) => [path, target.outputPath]))
   const chapters: string[] = []
+  const llmChapters: LlmChapter[] = []
+  const figureOccurrences: FigureOccurrence[] = []
+  const spineSequenceByPath = new Map(epub.spine.map((item, index) => [item.path, index + 1]))
 
   for (const [index, item] of epub.spine.entries()) {
-    let body: string
+    let rawBody: string
     let title: string
 
     if (isContentDocument(item)) {
@@ -238,6 +275,13 @@ export function convertEpub(
           assetSequence += 1
           const outputPath = outputAssetPath(assetSequence, `inline-${safeOutputName(alt, 'svg')}`, 'svg')
           outputFiles[outputPath] = sanitized.content
+          assetsByOutputPath.set(outputPath, {
+            figureId: figureId(assetSequence),
+            outputPath,
+            mediaType: 'image/svg+xml',
+            defaultLabel: alt,
+            data: sanitized.content,
+          })
           warnings.push(...sanitized.warnings.map((warning) => `Inline SVG in "${item.id}": ${warning}`))
           return outputPath
         } catch (error) {
@@ -245,10 +289,19 @@ export function convertEpub(
           warnings.push(`Removed an inline SVG from "${item.id}": ${error.message}`)
           return null
         }
+      }, (reference) => {
+        try {
+          const targetPath = resolveArchiveReference(archiveDirname(item.path), reference)
+          const sequence = spineSequenceByPath.get(targetPath)
+          return sequence === undefined ? null : `CHAPTER-${String(sequence).padStart(3, '0')}`
+        } catch (error) {
+          if (!(error instanceof SecurityError)) throw error
+          return null
+        }
       })
       warnings.push(...converted.warnings)
       title = chapterTitle(converted.markdown, item, index)
-      body = converted.markdown || `# ${title}\n\n[Empty chapter]`
+      rawBody = converted.markdown || `# ${title}\n\n[Empty chapter]`
     } else {
       const target = imageTargets.get(item.path)
       if (!target) {
@@ -256,10 +309,20 @@ export function convertEpub(
         continue
       }
       title = safeOutputName(item.id, `Page ${index + 1}`)
-      body = `# ${markdownInline(title)}\n\n![${markdownInline(title)}](${target})`
+      rawBody = `# ${markdownInline(title)}\n\n![${markdownInline(title)}](${target})`
     }
 
+    const annotated = annotateMarkdownFigures(rawBody, index + 1, title, assetsByOutputPath)
+    const body = annotated.markdown
     chapters.push(body)
+    llmChapters.push({
+      sequence: index + 1,
+      title,
+      rawMarkdown: rawBody,
+      annotatedMarkdown: body,
+      includeInCanonical: !item.properties.includes('nav'),
+    })
+    figureOccurrences.push(...annotated.occurrences)
     outputFiles[`chapters/${String(index + 1).padStart(3, '0')}-${title}.md`] = strToU8(
       body.replace(/\]\(assets\//gu, '](../assets/'),
     )
@@ -281,6 +344,21 @@ export function convertEpub(
   ].filter(Boolean).join('\n\n')
   const combined = `${frontMatter}\n\n---\n\n${chapters.join('\n\n---\n\n')}\n`
   outputFiles['book.md'] = strToU8(combined)
+
+  const llmExport = buildLlmExport(
+    {
+      title: epub.title,
+      ...(epub.author ? { author: epub.author } : {}),
+      ...(epub.language ? { language: epub.language } : {}),
+    },
+    llmChapters,
+    [...assetsByOutputPath.values()],
+    figureOccurrences,
+  )
+  Object.assign(outputFiles, llmExport.files)
+  if (llmExport.instructionLikePassages > 0) {
+    warnings.push(`The LLM safety scan found ${llmExport.instructionLikePassages} instruction-like passage(s); content was retained and documented in notebooklm/LLM-SAFETY-REPORT.md.`)
+  }
 
   const uniqueWarnings = [...new Set(warnings)].slice(0, 100)
   const assetCount = Object.keys(outputFiles).filter((path) => path.startsWith('assets/')).length

@@ -4,6 +4,10 @@
 
 - Fixed EPUB conversion in the browser by removing a Node-only `process.env.LOG_PERF` access from the bundled HTML-to-Markdown dependency.
 - Added a regression test for both development and production browser configuration.
+- Added a synchronized multimodal EPUB export for NotebookLM and similar tools: normalized `book.md`, passive visual companion EPUB, stable figure IDs, figure index and import instructions.
+- Preserved figure position, nearby text, alt text and `<figcaption>` content; unreferenced sanitized graphics now remain available in a labeled appendix.
+- Retained safe cross-chapter reference meaning and removed only manifest-declared navigation boilerplate from the canonical LLM source.
+- Added a non-destructive heuristic report for instruction-like passages that could be interpreted as prompt injection.
 
 ## 0.3.0 - 2026-07-14
 

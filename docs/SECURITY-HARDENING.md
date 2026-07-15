@@ -20,6 +20,7 @@ The baseline inspected on 14 July 2026 was upstream commit
 | Preview | Not applicable | Plain-text preview; converted content never becomes DOM HTML |
 | Supply chain | Release commands used dynamically resolved tooling | Exact lockfile, SHA-pinned Actions and Dependabot |
 | Image handling | Referenced files could pass through without format-specific sanitization | Raster signatures are verified; SVG scripts, events, active elements and unsafe references are stripped |
+| LLM ingestion | No dedicated output contract | Stable figure IDs synchronize normalized Markdown, safe assets and a rebuilt passive visual EPUB; instruction-like text is reported without deletion |
 | Format scope | EPUB | EPUB 2/3 including visual SVG/raster spine items, plus text-based PDF |
 
 ## PDF-specific design
@@ -39,6 +40,14 @@ gradient, clipping and grouping elements, filters attributes and styles, and rew
 only when they resolve to a signature-checked local raster asset. Unsupported nodes are removed
 with a warning; a malformed or structurally unsafe SVG is omitted without rejecting otherwise
 convertible book content.
+
+## Multimodal companion design
+
+The visual companion is not the source EPUB with a new filename. It is a new EPUB containing only
+generated XHTML, fixed local CSS and assets that already passed the raster signature check or SVG
+allowlist sanitizer. Figure IDs appear at matching reading positions in the visual document and
+canonical Markdown. Packaged graphics without a surviving spine reference are placed in a labeled
+appendix so sanitization does not silently discard potentially meaningful information.
 
 ## Verification
 
