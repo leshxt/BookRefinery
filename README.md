@@ -14,9 +14,9 @@ make network connections.
 |---|---|---|
 | EPUB 2/3 | General Markdown bundle plus synchronized LLM package | Preserves signature-checked raster images and allowlist-sanitized SVG at their reading positions |
 | FictionBook 2 (`.fb2`, `.fb2.zip`) | Same synchronized book package as EPUB | Preserves sections, notes, cover art and embedded signature-checked or sanitized images at their reading positions |
-| PDF | Synchronized visual PDF and page-separated Markdown | Re-renders whole pages so raster images, vector graphics, tables and layout stay together; original active objects are not copied |
+| PDF | Searchable sanitized PDF and page-separated Markdown | Re-renders whole pages for visual fidelity, then adds locally extracted Unicode text as a passive searchable layer |
 
-Scanned PDF pages remain visible in the visual companion, but they need OCR before they can
+Scanned PDF pages remain visible in the sanitized companion, but they need OCR before they can
 produce Markdown text. PDF is a layout format, so complex columns, tables and reading order may
 still require manual Markdown cleanup.
 
@@ -54,11 +54,11 @@ EPUB and FB2 exports contain:
 - a synchronized multimodal package under `notebooklm/`;
 - `SECURITY-REPORT.md` with enforced limits and removed content.
 
-PDF exports contain `notebooklm/document.visual.pdf`, matching `PAGE-xxxx` sections in
-`document.md`, import guidance and the security report. The visual PDF is a new document made
-only from locally rendered JPEG pages. It preserves the complete visible page rather than trying
-to guess which embedded objects count as images. Original links, forms, file attachments,
-annotations, scripts and PDF object structures are not copied.
+PDF exports contain `notebooklm/document.sanitized.pdf`, matching `PAGE-xxxx` sections in
+`document.md`, import guidance and the security report. The sanitized PDF is a new sandwich-style
+document: each locally rendered JPEG page preserves all visible text, images, vectors, tables and
+layout, while a non-rendering Unicode text layer makes the source text searchable and extractable.
+Original links, forms, file attachments, annotations, scripts and PDF object structures are not copied.
 
 ## NotebookLM and multimodal LLMs
 
@@ -85,11 +85,11 @@ remains available through the companion EPUB. Do not also upload `chapters/` unl
 is intentional. Alt text and captions improve retrieval but do not replace inspection of the
 actual pixels.
 
-For PDF, start with **`notebooklm/document.visual.pdf` only**. Every page is flattened to passive
-pixels, which keeps photographs, diagrams, vector art, tables and their exact placement together.
-`PAGE-0001` in `document.md` maps to page 1 in that visual PDF. Add `document.md` only if the target
-model's text retrieval from the visual PDF is incomplete; using both by default can duplicate
-passages and citations.
+For PDF, start with **`notebooklm/document.sanitized.pdf` only**. Every source page is safely rendered
+for photographs, diagrams, vector art, tables and exact placement, then paired with a rebuilt Unicode
+text layer from that page. The PDF therefore remains visually faithful and machine-readable without
+copying the source's active object graph. `PAGE-0001` in `document.md` maps to page 1 in the sanitized
+PDF. Add `document.md` only as a text-only fallback; using both by default can duplicate passages and citations.
 
 `LLM-SAFETY-REPORT.md` flags a small set of common instruction-like patterns. It never deletes the
 book passage: legitimate fiction, security writing or quoted prompts must remain intact.
@@ -104,7 +104,7 @@ Book2Markdown treats every input as hostile:
 - XML entities and internal DTD subsets are rejected; inert legacy XHTML doctypes are stripped;
 - FB2 uses an XML-encoding allowlist, bounded Base64 decoding and the same raster/SVG image checks as EPUB;
 - PDF.js receives local bytes only, with fetching, XFA, system fonts, browser image decoders and WASM disabled;
-- PDF annotations are disabled during page rendering, and a new PDF is built only from bounded JPEG page images;
+- PDF annotations are disabled during page rendering, and a new PDF is built only from bounded JPEG page images plus locally extracted passive Unicode text;
 - untrusted HTML or Markdown is never rendered in the application;
 - SVG scripts, event handlers, remote or embedded sources, active elements and unsafe styles are removed;
 - the visual companion EPUB is rebuilt from passive generated XHTML and already-sanitized assets,

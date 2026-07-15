@@ -4,9 +4,9 @@
 
 - Added complete FictionBook 2 support for `.fb2` and single-document `.fb2.zip`, including sections,
   note bodies, cover art, embedded raster/SVG graphics, stable figure positions and the synchronized LLM package.
-- Added bounded whole-page PDF rendering and a rebuilt passive `document.visual.pdf` so photographs,
-  diagrams, vectors, tables and layout remain available without copying source PDF active objects.
-- Added stable `PAGE-xxxx` alignment between PDF Markdown and the visual companion, plus one-source NotebookLM guidance.
+- Added bounded whole-page PDF rendering and a rebuilt searchable `document.sanitized.pdf`: passive
+  page images preserve visual layout while a parser-tested Unicode layer keeps extracted source text machine-readable.
+- Added stable `PAGE-xxxx` alignment between PDF Markdown and the sanitized companion, plus one-source NotebookLM guidance.
 - Added the application screenshot to the README.
 - Fixed EPUB conversion in the browser by removing a Node-only `process.env.LOG_PERF` access from the bundled HTML-to-Markdown dependency.
 - Added a regression test for both development and production browser configuration.
