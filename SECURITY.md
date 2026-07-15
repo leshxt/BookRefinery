@@ -57,18 +57,19 @@ is impossible.
 - PDF.js receives a local byte array; streaming, range loading and worker fetch are disabled.
 - XFA, system fonts, font-face loading, browser image decoding and WASM are disabled.
 - Password-protected PDFs are rejected.
-- Up to 500 pages and 240 million total output pixels may be rendered into the visual companion.
+- Up to 500 pages and 240 million total output pixels may be rendered into the sanitized companion.
   Individual source images are capped at 20 million pixels and temporary canvases at 64 MB.
 - Annotation rendering is disabled. Forms, links, attachments, annotations and JavaScript are not copied.
-- Every page is flattened to JPEG and embedded in a newly created PDF. If every page cannot be rendered
-  within the limits, no partial visual PDF is exported; page-separated Markdown remains available.
+- Every page is flattened to JPEG and embedded in a newly created PDF, then paired with an invisible
+  searchable Unicode layer rebuilt from locally extracted text. No source font or content object is copied.
+  If every page cannot be rendered within the limits, no partial sanitized PDF is exported.
 
 ## Known limitations
 
 - A Web Worker provides termination and UI isolation, but browsers do not expose a strict
   per-worker memory quota.
 - PDF text order is heuristic because PDF stores positioned glyphs rather than semantic blocks.
-- No OCR is performed; scanned pages remain visible in the visual PDF but produce a warning instead of Markdown text.
+- No OCR is performed; scanned pages remain visible in the sanitized PDF but cannot gain a searchable text layer.
 - Raster image decoders and the SVG renderer remain part of the consumer's eventual Markdown
   viewer, not this app. Sanitization reduces active-content risk but does not rasterize SVG.
 - Caption and alt-text extraction cannot describe arbitrary visual meaning. The synchronized

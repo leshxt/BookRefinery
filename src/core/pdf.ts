@@ -10,7 +10,7 @@ import type { ConversionProgress, ConversionResult, ConversionSummary } from './
 import { SecurityError } from './errors'
 import { safeOutputName } from './path'
 import { SECURITY_POLICY } from './policy'
-import { VisualPdfBuilder } from './visual-pdf'
+import { SearchablePdfBuilder } from './visual-pdf'
 import { isRecord } from './xml'
 
 type ProgressReporter = (progress: ConversionProgress) => void
@@ -107,14 +107,14 @@ function addToken(line: string, token: string): string {
   return `${line} ${token}`
 }
 
-function pageTextToMarkdown(items: readonly unknown[]): string {
+function extractPageText(items: readonly unknown[]): { readonly plain: string; readonly markdown: string } {
   const lines: PageLine[] = []
   let current = ''
   let currentY: number | null = null
   let currentHeight = 12
 
   const flush = (): void => {
-    const text = safeMarkdownText(current)
+    const text = current.trim()
     if (text) lines.push({ text, y: currentY, height: currentHeight })
     current = ''
     currentY = null
@@ -160,7 +160,13 @@ function pageTextToMarkdown(items: readonly unknown[]): string {
     }
   }
 
-  return paragraphs.join('\n').replace(/\n{3,}/gu, '\n\n').trim()
+  const plain = paragraphs.join('\n').replace(/\n{3,}/gu, '\n\n').trim()
+  const markdown = plain
+    .split('\n')
+    .map((line) => safeMarkdownText(line))
+    .join('\n')
+    .trim()
+  return { plain, markdown }
 }
 
 function metadataText(info: unknown, key: string): string | undefined {
@@ -180,15 +186,16 @@ function reportMarkdown(summary: ConversionSummary, sourceName: string): string 
 - PDF JavaScript executed: no
 - Original forms, attachments, annotations, links, and scripts copied: no
 - Page appearance rebuilt from local raster rendering: ${summary.assets > 0 ? 'yes' : 'no'}
-- Visual page companion: ${summary.assets > 0 ? 'notebooklm/document.visual.pdf' : 'not produced; see warnings'}
+- Searchable text layer rebuilt from locally extracted page text: ${summary.assets > 0 ? 'yes' : 'no'}
+- Sanitized PDF companion: ${summary.assets > 0 ? 'notebooklm/document.sanitized.pdf' : 'not produced; see warnings'}
 - Text output rendered as active HTML: no
 
 ## Enforced limits
 
 - Input: 80 MB
 - Text extraction pages: 2,000
-- Visual companion pages: 500
-- Visual companion pixel budget: 240 million
+- Sanitized companion pages: 500
+- Sanitized companion pixel budget: 240 million
 - Individual decoded source image: 20 million pixels
 - Extracted text per page: 2 MB
 - Total extracted text: 30 MB
@@ -196,9 +203,9 @@ function reportMarkdown(summary: ConversionSummary, sourceName: string): string 
 
 ## Limitations
 
-PDF stores layout rather than semantic document structure. The visual companion preserves page
-appearance, while Markdown reading order, tables, and columns may need manual cleanup. Scanned
-pages remain visible in the companion but have no extracted Markdown text unless they had a text layer.
+PDF stores layout rather than semantic document structure. The sanitized companion preserves page
+appearance and adds a passive searchable text layer, while Markdown reading order, tables, and columns
+may need manual cleanup. Scanned pages remain visible but cannot gain searchable text without OCR.
 
 The hardening substantially reduces common risks, but it is not a mathematical security guarantee.
 `
@@ -209,14 +216,14 @@ function notebookReadme(title: string): string {
 
 ## Recommended import
 
-Start with **\`document.visual.pdf\` only**. It contains every successfully rendered source page as
-passive pixels in the original order, so diagrams, photographs, tables, typography, and page layout
-remain together without carrying over the source PDF's links, forms, attachments, annotations, or scripts.
+Start with **\`document.sanitized.pdf\` only**. It combines every safely rendered source page with a
+searchable, non-rendering text layer extracted locally from that same page. Text stays machine-readable,
+while diagrams, photographs, tables, typography, and layout remain visually in their original positions.
 
-Use \`document.md\` only as an optional text-retrieval fallback if the target model misses text in the
-visual PDF. Do not add both by default because that can create duplicate passages and competing citations.
+Use \`document.md\` only as an optional text-only fallback. Do not add both by default because that can
+create duplicate passages and competing citations.
 
-Markdown headings use stable \`PAGE-0001\` identifiers. \`PAGE-0001\` corresponds to page 1 in the visual
+Markdown headings use stable \`PAGE-0001\` identifiers. \`PAGE-0001\` corresponds to page 1 in the sanitized
 PDF, \`PAGE-0002\` to page 2, and so on.
 
 ## Suggested notebook instruction
@@ -225,14 +232,16 @@ PDF, \`PAGE-0002\` to page 2, and so on.
 
 ## Scope
 
-This package was generated locally for **${safeMarkdownText(title)}**. The visual PDF is a new document
-built from JPEG page renderings. It does not contain the original PDF object graph or active features.
+This package was generated locally for **${safeMarkdownText(title)}**. The sanitized PDF is a new document
+built from JPEG page renderings and locally extracted passive text. It does not contain the original PDF
+object graph or active features.
 `
 }
 
-async function renderVisualPdf(
+async function renderSearchablePdf(
   bytes: Uint8Array,
   geometry: readonly PageGeometry[],
+  searchablePageText: readonly string[],
   title: string,
   author: string | undefined,
   onProgress: ProgressReporter,
@@ -244,7 +253,7 @@ async function renderVisualPdf(
   if (scale < 0.75) return undefined
   if (geometry.some((page) => page.width * scale > 16_384 || page.height * scale > 16_384)) return undefined
 
-  const visualLoadingTask = getDocument({
+  const searchableLoadingTask = getDocument({
     data: bytes.slice(),
     verbosity: VerbosityLevel.ERRORS,
     useSystemFonts: false,
@@ -266,9 +275,9 @@ async function renderVisualPdf(
   })
 
   try {
-    const document = await visualLoadingTask.promise
+    const document = await searchableLoadingTask.promise
     if (document.numPages !== geometry.length) throw new Error('PDF page count changed between processing passes.')
-    const builder = await VisualPdfBuilder.create({ title, ...(author ? { author } : {}) })
+    const builder = await SearchablePdfBuilder.create({ title, ...(author ? { author } : {}) })
     for (let pageNumber = 1; pageNumber <= geometry.length; pageNumber += 1) {
       const page = await document.getPage(pageNumber)
       const viewport = page.getViewport({ scale })
@@ -287,18 +296,23 @@ async function renderVisualPdf(
         background: 'rgb(255,255,255)',
       }).promise
       const jpegBlob = await canvas.convertToBlob({ type: 'image/jpeg', quality: 0.86 })
-      await builder.addJpegPage(new Uint8Array(await jpegBlob.arrayBuffer()), geometry[pageNumber - 1]!.width, geometry[pageNumber - 1]!.height)
+      await builder.addJpegPage(
+        new Uint8Array(await jpegBlob.arrayBuffer()),
+        geometry[pageNumber - 1]!.width,
+        geometry[pageNumber - 1]!.height,
+        searchablePageText[pageNumber - 1] ?? '',
+      )
       page.cleanup()
       canvas.width = 0
       canvas.height = 0
       onProgress({
         percent: 65 + Math.round((pageNumber / geometry.length) * 27),
-        label: `Preserving visual page ${pageNumber} of ${geometry.length}`,
+        label: `Preserving searchable page ${pageNumber} of ${geometry.length}`,
       })
     }
     return builder.save()
   } finally {
-    await visualLoadingTask.destroy()
+    await searchableLoadingTask.destroy()
   }
 }
 
@@ -347,6 +361,7 @@ export async function convertPdf(
     const title = metadataText(info, 'Title') ?? sourceStem(sourceName)
     const author = metadataText(info, 'Author')
     const pageSections: string[] = []
+    const searchablePageText: string[] = []
     const pageGeometry: PageGeometry[] = []
     const warnings: string[] = []
     let extractedBytes = 0
@@ -356,8 +371,8 @@ export async function convertPdf(
       const viewport = page.getViewport({ scale: 1 })
       pageGeometry.push({ width: viewport.width, height: viewport.height })
       const textContent = await page.getTextContent({ disableNormalization: false })
-      const pageText = pageTextToMarkdown(textContent.items)
-      const pageBytes = new TextEncoder().encode(pageText).byteLength
+      const pageText = extractPageText(textContent.items)
+      const pageBytes = new TextEncoder().encode(pageText.plain).byteLength
       if (pageBytes > SECURITY_POLICY.maxPdfPageTextBytes) {
         throw new SecurityError('LIMIT_EXCEEDED', `Page ${pageNumber} exceeds the extracted-text limit.`)
       }
@@ -366,8 +381,9 @@ export async function convertPdf(
         throw new SecurityError('LIMIT_EXCEEDED', 'The extracted PDF text exceeds the total size limit.')
       }
 
-      if (!pageText) warnings.push(`Page ${pageNumber} has no extractable text layer.`)
-      pageSections.push(`## PAGE-${String(pageNumber).padStart(4, '0')} — Page ${pageNumber}\n\n${pageText || '[No extractable text layer]'}`)
+      if (!pageText.plain) warnings.push(`Page ${pageNumber} has no extractable text layer.`)
+      searchablePageText.push(pageText.plain)
+      pageSections.push(`## PAGE-${String(pageNumber).padStart(4, '0')} — Page ${pageNumber}\n\n${pageText.markdown || '[No extractable text layer]'}`)
       page.cleanup()
 
       onProgress({
@@ -376,23 +392,23 @@ export async function convertPdf(
       })
     }
 
-    let visualPdf: Uint8Array | undefined
+    let searchablePdf: Uint8Array | undefined
     if (document.numPages > SECURITY_POLICY.maxVisualPdfPages) {
-      warnings.push(`The visual PDF was not produced because the document exceeds the ${SECURITY_POLICY.maxVisualPdfPages}-page visual limit; Markdown text is still available.`)
+      warnings.push(`The sanitized PDF was not produced because the document exceeds the ${SECURITY_POLICY.maxVisualPdfPages}-page visual limit; Markdown text is still available.`)
     } else {
       const basePixels = pageGeometry.reduce((sum, page) => sum + page.width * page.height, 0)
       const requiredScale = Math.min(1.5, Math.sqrt(SECURITY_POLICY.maxVisualPdfPixels / Math.max(basePixels, 1)))
       if (requiredScale < 0.75) {
-        warnings.push('The visual PDF was not produced because rendering every page would exceed the visual pixel budget; Markdown text is still available.')
+        warnings.push('The sanitized PDF was not produced because rendering every page would exceed the visual pixel budget; Markdown text is still available.')
       } else if (typeof OffscreenCanvas === 'undefined') {
-        warnings.push('This browser does not provide OffscreenCanvas, so the visual PDF could not be produced; Markdown text is still available.')
+        warnings.push('This browser does not provide OffscreenCanvas, so the sanitized PDF could not be produced; Markdown text is still available.')
       } else {
         try {
-          visualPdf = await renderVisualPdf(bytes, pageGeometry, title, author, onProgress)
-          if (!visualPdf) warnings.push('The visual PDF could not be produced within the safe rendering limits; Markdown text is still available.')
+          searchablePdf = await renderSearchablePdf(bytes, pageGeometry, searchablePageText, title, author, onProgress)
+          if (!searchablePdf) warnings.push('The sanitized PDF could not be produced within the safe rendering limits; Markdown text is still available.')
         } catch {
-          warnings.push('A page could not be rendered safely, so no partial visual PDF was exported; Markdown text is still available.')
-          visualPdf = undefined
+          warnings.push('A page could not be rendered safely, so no partial sanitized PDF was exported; Markdown text is still available.')
+          searchablePdf = undefined
         }
       }
     }
@@ -410,7 +426,7 @@ export async function convertPdf(
       ...(author ? { author } : {}),
       units: document.numPages,
       unitLabel: 'pages',
-      assets: visualPdf ? document.numPages : 0,
+      assets: searchablePdf ? document.numPages : 0,
       inputBytes,
       processedBytes: extractedBytes,
       outputBytes: 0,
@@ -422,9 +438,9 @@ export async function convertPdf(
       'notebooklm/README.md': strToU8(notebookReadme(title)),
       'SECURITY-REPORT.md': strToU8(reportMarkdown(provisionalSummary, sourceName)),
     }
-    if (visualPdf) files['notebooklm/document.visual.pdf'] = visualPdf
+    if (searchablePdf) files['notebooklm/document.sanitized.pdf'] = searchablePdf
 
-    onProgress({ percent: 94, label: 'Building the passive PDF and Markdown bundle' })
+    onProgress({ percent: 94, label: 'Building the searchable PDF and Markdown bundle' })
     const resultArchive = zipSync(files, { level: 6, mtime: new Date('2026-01-01T00:00:00Z') })
     if (resultArchive.byteLength > SECURITY_POLICY.maxOutputBytes) {
       throw new SecurityError('LIMIT_EXCEEDED', 'The export bundle exceeds the output size limit.')

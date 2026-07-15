@@ -29,10 +29,12 @@ PDF support uses the maintained `pdfjs-dist` package but intentionally does not 
 The converter extracts text and renders pages to bounded offscreen canvases with annotations
 disabled. Network loading, XFA, system fonts, browser image decoders and WASM are disabled, and
 the outer worker remains subject to the same watchdog as ebook parsing. `pdf-lib` then builds a
-new document containing only the JPEG page renderings; the original object graph is not copied.
+new document containing the JPEG page renderings plus a non-rendering Unicode text layer generated
+from PDF.js extraction; the original object graph, content streams and fonts are not copied.
 
-This preserves visible page content and placement while discarding source links, forms, scripts,
-attachments and annotations. It does not attempt OCR, so scanned text remains visual only.
+This sandwich design preserves visible page content and placement while keeping text searchable for
+LLM ingestion and discarding source links, forms, scripts, attachments and annotations. The generated
+Unicode CMaps are parser-tested. It does not attempt OCR, so scanned text remains visual only.
 
 ## FB2-specific design
 
@@ -63,7 +65,7 @@ appendix so sanitization does not silently discard potentially meaningful inform
 
 The automated suite covers normal conversion plus traversal paths, duplicate archive names,
 extreme compression, XML entities, legacy EPUB 2 doctypes, active HTML, hostile SVG, visual SVG
-spine items, FB2 notes/images/Base64 mismatches, remote URLs, PDF text extraction and passive PDF
+spine items, FB2 notes/images/Base64 mismatches, remote URLs, PDF text extraction and searchable PDF
 rebuilding. The full
 gate is:
 

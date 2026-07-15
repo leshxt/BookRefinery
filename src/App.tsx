@@ -279,8 +279,8 @@ export function App() {
                 )}
                 {state.result.summary.format === 'pdf' && state.result.summary.assets > 0 && (
                   <div className="llm-ready-note">
-                    <strong>NotebookLM-ready visual PDF included</strong>
-                    <span>Start with <code>notebooklm/document.visual.pdf</code>. It preserves every page as passive pixels; <code>document.md</code> is an optional text-only fallback.</span>
+                    <strong>NotebookLM-ready searchable PDF included</strong>
+                    <span>Start with <code>notebooklm/document.sanitized.pdf</code>. It combines safe page visuals with real searchable text; <code>document.md</code> is an optional text-only fallback.</span>
                   </div>
                 )}
                 <button className="primary-button" type="button" onClick={downloadResult}>
