@@ -36,6 +36,14 @@ export interface MarkdownResult {
 }
 
 type InlineSvgExporter = (svg: string, alt: string) => string | null
+type InternalLinkResolver = (href: string) => string | null
+
+interface ImageElement {
+  getAttribute(name: string): string | null | undefined
+  closest(selector: string): {
+    querySelector(query: string): { readonly textContent: string | null } | null
+  } | null
+}
 
 function escapeLabel(value: string): string {
   return value
@@ -46,11 +54,26 @@ function escapeLabel(value: string): string {
     .slice(0, 200)
 }
 
+function imageLabel(node: ImageElement): string {
+  const figureCaption = node.closest('figure')?.querySelector('figcaption')?.textContent ?? undefined
+  const candidates = [
+    node.getAttribute('alt'),
+    figureCaption,
+    node.getAttribute('title'),
+    node.getAttribute('aria-label'),
+  ]
+    .map((value) => value ? escapeLabel(value) : '')
+    .filter(Boolean)
+
+  return [...new Set(candidates)].join(' — ').slice(0, 300) || 'Image'
+}
+
 export function xhtmlToSafeMarkdown(
   html: string,
   chapterPath: string,
   imageTargets: ReadonlyMap<string, string>,
   exportInlineSvg?: InlineSvgExporter,
+  resolveInternalLink?: InternalLinkResolver,
 ): MarkdownResult {
   const warnings: string[] = []
   const baseDirectory = archiveDirname(chapterPath)
@@ -69,7 +92,7 @@ export function xhtmlToSafeMarkdown(
     },
     {
       img: ({ node }) => {
-        const alt = escapeLabel(node.getAttribute('alt') ?? 'Image') || 'Image'
+        const alt = imageLabel(node)
         const source = node.getAttribute('src')?.trim() ?? ''
         if (!source || source.startsWith('//') || EXTERNAL_SCHEME.test(source)) {
           warnings.push('Removed an external or embedded image.')
@@ -102,7 +125,11 @@ export function xhtmlToSafeMarkdown(
       a: ({ node }) => {
         const href = node.getAttribute('href')?.trim() ?? ''
         if (SAFE_FRAGMENT.test(href)) {
-          return { prefix: '[', postfix: `](${href})` }
+          return { prefix: '', postfix: ` (see note ${escapeLabel(href)})` }
+        }
+        if (href && !href.startsWith('//') && !EXTERNAL_SCHEME.test(href)) {
+          const destination = resolveInternalLink?.(href)
+          if (destination) return { prefix: '', postfix: ` (see ${escapeLabel(destination)})` }
         }
         if (href) warnings.push('Unlinked an external or cross-file link.')
         return { prefix: '', postfix: '' }

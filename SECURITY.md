@@ -31,6 +31,10 @@ is impossible.
 - Standalone, inline and reading-order SVG are rebuilt from a passive allowlist. Scripts, event
   handlers, `foreignObject`, animation/filter elements, unsafe styles and external or embedded
   references are removed. Safe references to local signature-checked raster assets are rewritten.
+- The visual companion EPUB is rebuilt from escaped text and generated passive XHTML. Source HTML,
+  source stylesheets, scripts, forms, remote links and package metadata structures are not copied.
+- The LLM instruction-pattern scan is advisory and non-destructive. It does not execute or remove
+  book text and must not be treated as a complete prompt-injection detector.
 
 ### PDF
 
@@ -49,6 +53,8 @@ is impossible.
 - No OCR is performed; scanned pages produce a warning instead of text.
 - Raster image decoders and the SVG renderer remain part of the consumer's eventual Markdown
   viewer, not this app. Sanitization reduces active-content risk but does not rasterize SVG.
+- Caption and alt-text extraction cannot describe arbitrary visual meaning. The synchronized
+  companion preserves the actual graphic so a multimodal consumer can inspect it.
 
 For exceptionally hostile material, additionally use an updated disposable browser profile
 or virtual machine.

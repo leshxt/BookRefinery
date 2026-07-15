@@ -268,8 +268,14 @@ export function App() {
                     <ul>{state.result.summary.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>
                   </details>
                 )}
+                {state.result.summary.format === 'epub' && (
+                  <div className="llm-ready-note">
+                    <strong>NotebookLM-ready visual EPUB included</strong>
+                    <span>Start with <code>notebooklm/book.sanitized.epub</code>. It already contains the text and sanitized graphics in reading order; <code>book.md</code> is an optional text-only fallback.</span>
+                  </div>
+                )}
                 <button className="primary-button" type="button" onClick={downloadResult}>
-                  <DownloadIcon /> Download Markdown bundle
+                  <DownloadIcon /> Download conversion bundle
                 </button>
                 <details className="preview">
                   <summary>Show text preview</summary>

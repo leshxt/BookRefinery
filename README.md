@@ -10,7 +10,7 @@ make network connections.
 
 | Input | Output | Notes |
 |---|---|---|
-| EPUB 2/3 | `book.md`, individual chapters, safe image assets | Preserves signature-checked raster images and allowlist-sanitized SVG |
+| EPUB 2/3 | General Markdown bundle plus synchronized LLM package | Preserves signature-checked raster images and allowlist-sanitized SVG at their reading positions |
 | Text-based PDF | `document.md`, separated by page | Extracts text only; no forms, attachments, scripts or images |
 
 Scanned PDFs need OCR, which is intentionally not part of the current release. PDF is a
@@ -43,14 +43,43 @@ when hosting it.
 
 EPUB exports contain:
 
-- `book.md` with the complete book;
+- `book.md` with the complete book and stable `FIG-xxxx` markers at the original image positions;
 - one Markdown file per text or visual spine item under `chapters/`;
-- signature-checked PNG, JPEG, GIF and WebP assets under `assets/`;
+- signature-checked PNG, JPEG, GIF and WebP assets under `assets/`, named with matching figure IDs;
 - sanitized standalone and inline SVG assets, including safe local raster references;
+- a synchronized multimodal package under `notebooklm/`;
 - `SECURITY-REPORT.md` with enforced limits and removed content.
 
 PDF exports contain `document.md` plus the security report. Images, file attachments,
 annotations, forms and embedded JavaScript are not exported.
+
+## NotebookLM and multimodal LLMs
+
+For NotebookLM, start with **`notebooklm/book.sanitized.epub` only**. It is the primary source and
+already contains the complete text plus the actual sanitized graphics at matching `FIG-xxxx`
+positions without copying the source EPUB's scripts, forms, remote resources or original HTML.
+Using one source avoids duplicate passages and competing citations.
+
+`notebooklm/book.md` is an optional text-only fallback. Add it only when EPUB text retrieval or
+citations are incomplete, or when another target tool does not accept EPUB. It provides normalized
+heading levels, metadata, a table of contents, retained cross-chapter references and figure markers.
+Do not select both sources by default.
+
+`FIGURE-INDEX.md` maps every graphic to its chapter, caption or alt text, nearby text and safe
+asset. Graphics present in the EPUB package but absent from the readable spine are retained in a
+clearly labeled appendix instead of disappearing silently. Declared EPUB navigation documents are
+excluded from the canonical LLM text to avoid duplicate table-of-contents boilerplate; arbitrary
+copyright or front-matter content is not heuristically deleted.
+
+NotebookLM officially accepts Markdown, EPUB and several standalone raster image formats. If it
+fails to inspect an embedded raster figure, add the matching PNG, JPEG, GIF or WebP file from
+`assets/` as a separate image source. Standalone SVG is not listed as supported, so sanitized SVG
+remains available through the companion EPUB. Do not also upload `chapters/` unless duplicate text
+is intentional. Alt text and captions improve retrieval but do not replace inspection of the
+actual pixels.
+
+`LLM-SAFETY-REPORT.md` flags a small set of common instruction-like patterns. It never deletes the
+book passage: legitimate fiction, security writing or quoted prompts must remain intact.
 
 ## Security model
 
@@ -63,7 +92,9 @@ Book2Markdown treats every input as hostile:
 - PDF.js receives local bytes only, with fetching, rendering, XFA, system fonts and WASM disabled;
 - untrusted HTML or Markdown is never rendered in the application;
 - SVG scripts, event handlers, remote or embedded sources, active elements and unsafe styles are removed;
-- only passive Markdown, signature-checked raster files and allowlist-sanitized SVG leave the converter.
+- the visual companion EPUB is rebuilt from passive generated XHTML and already-sanitized assets,
+  rather than copying source HTML;
+- only passive Markdown/XHTML, signature-checked raster files and allowlist-sanitized SVG leave the converter.
 
 See [SECURITY.md](SECURITY.md) for the threat model and
 [docs/SECURITY-HARDENING.md](docs/SECURITY-HARDENING.md) for the changes compared with the
