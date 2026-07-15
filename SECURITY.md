@@ -2,7 +2,7 @@
 
 ## Threat model
 
-Book2Markdown assumes that every EPUB and PDF may be intentionally malicious. The application
+Book2Markdown assumes that every EPUB, FB2 and PDF may be intentionally malicious. The application
 has no backend, never uploads a document and ships with a Content Security Policy that blocks
 all network connections.
 
@@ -36,21 +36,39 @@ is impossible.
 - The LLM instruction-pattern scan is advisory and non-destructive. It does not execute or remove
   book text and must not be treated as a complete prompt-injection detector.
 
+### FictionBook 2
+
+- Plain `.fb2` and single-document `.fb2.zip` input are supported; compressed input inherits all
+  ZIP path, count, size and compression-ratio boundaries used for EPUB.
+- FB2 XML is capped at 50 MB. DTD and entity declarations are rejected before parsing.
+- UTF-8, UTF-16, Windows-1251 and Windows-1252/Latin-1 declarations are allowlisted; other declared
+  encodings are rejected instead of guessed.
+- Each Base64 binary is capped at 25 MB decoded and all decoded binaries at 100 MB total.
+- Duplicate or unsafe binary identifiers are rejected. Unsupported embedded binary types are omitted.
+- PNG, JPEG, GIF and WebP signatures are checked; SVG uses the same passive allowlist sanitizer as EPUB.
+- Sections, nested sections, note bodies, internal note references, poems, tables, cover images and image
+  positions are converted to passive output. External link targets are removed.
+- The NotebookLM companion is rebuilt as generated EPUB XHTML; source FB2 XML is never copied into it.
+
 ### PDF
 
 - The input must start with a PDF signature and may contain at most 2,000 pages.
 - Extracted text is capped at 2 MB per page and 30 MB overall.
 - PDF.js receives a local byte array; streaming, range loading and worker fetch are disabled.
-- Rendering, XFA, system fonts, font-face loading, image decoding and WASM are disabled.
+- XFA, system fonts, font-face loading, browser image decoding and WASM are disabled.
 - Password-protected PDFs are rejected.
-- Forms, annotations, attachments, JavaScript and images are not exported.
+- Up to 500 pages and 240 million total output pixels may be rendered into the visual companion.
+  Individual source images are capped at 20 million pixels and temporary canvases at 64 MB.
+- Annotation rendering is disabled. Forms, links, attachments, annotations and JavaScript are not copied.
+- Every page is flattened to JPEG and embedded in a newly created PDF. If every page cannot be rendered
+  within the limits, no partial visual PDF is exported; page-separated Markdown remains available.
 
 ## Known limitations
 
 - A Web Worker provides termination and UI isolation, but browsers do not expose a strict
   per-worker memory quota.
 - PDF text order is heuristic because PDF stores positioned glyphs rather than semantic blocks.
-- No OCR is performed; scanned pages produce a warning instead of text.
+- No OCR is performed; scanned pages remain visible in the visual PDF but produce a warning instead of Markdown text.
 - Raster image decoders and the SVG renderer remain part of the consumer's eventual Markdown
   viewer, not this app. Sanitization reduces active-content risk but does not rasterize SVG.
 - Caption and alt-text extraction cannot describe arbitrary visual meaning. The synchronized

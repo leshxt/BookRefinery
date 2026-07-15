@@ -83,7 +83,10 @@ function selectError(file: File): { readonly code: SecurityErrorCode; readonly m
 }
 
 function fileBadge(file: File): string {
-  return file.name.toLocaleLowerCase('en-US').endsWith('.pdf') ? 'PDF' : 'EPUB'
+  const name = file.name.toLocaleLowerCase('en-US')
+  if (name.endsWith('.pdf')) return 'PDF'
+  if (name.endsWith('.fb2') || name.endsWith('.fb2.zip')) return 'FB2'
+  return 'EPUB'
 }
 
 export function App() {
@@ -162,10 +165,10 @@ export function App() {
 
       <main id="main">
         <section className="hero" aria-labelledby="hero-title">
-          <div className="eyebrow"><ShieldIcon /> EPUB &amp; PDF · hardened local conversion</div>
+          <div className="eyebrow"><ShieldIcon /> EPUB, FB2 &amp; PDF · hardened local conversion</div>
           <h1 id="hero-title">Ebooks in.<br /><span>Markdown out.</span></h1>
           <p className="hero-copy">
-            Convert EPUB and PDF ebooks locally into clean Markdown. No uploads, no remote loading,
+            Convert EPUB, FB2 and PDF ebooks locally into clean Markdown. No uploads, no remote loading,
             no active HTML — just your document in an isolated worker with strict safety limits.
           </p>
 
@@ -198,7 +201,7 @@ export function App() {
           >
             <input
               type="file"
-              accept=".epub,.pdf,application/epub+zip,application/pdf"
+              accept=".epub,.fb2,.fb2.zip,.pdf,application/epub+zip,application/x-fictionbook+xml,application/pdf"
               disabled={state.kind === 'running'}
               onChange={(event) => {
                 selectFile(event.currentTarget.files?.[0])
@@ -206,7 +209,7 @@ export function App() {
               }}
             />
             <span className="upload-orbit"><UploadIcon /></span>
-            <strong>{state.dragging ? 'Drop it here' : 'Drop an EPUB or PDF here'}</strong>
+            <strong>{state.dragging ? 'Drop it here' : 'Drop an EPUB, FB2 or PDF here'}</strong>
             <span>or click to choose an ebook</span>
           </label>
 
@@ -268,10 +271,16 @@ export function App() {
                     <ul>{state.result.summary.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>
                   </details>
                 )}
-                {state.result.summary.format === 'epub' && (
+                {(state.result.summary.format === 'epub' || state.result.summary.format === 'fb2') && (
                   <div className="llm-ready-note">
-                    <strong>NotebookLM-ready visual EPUB included</strong>
+                    <strong>NotebookLM-ready visual ebook included</strong>
                     <span>Start with <code>notebooklm/book.sanitized.epub</code>. It already contains the text and sanitized graphics in reading order; <code>book.md</code> is an optional text-only fallback.</span>
+                  </div>
+                )}
+                {state.result.summary.format === 'pdf' && state.result.summary.assets > 0 && (
+                  <div className="llm-ready-note">
+                    <strong>NotebookLM-ready visual PDF included</strong>
+                    <span>Start with <code>notebooklm/document.visual.pdf</code>. It preserves every page as passive pixels; <code>document.md</code> is an optional text-only fallback.</span>
                   </div>
                 )}
                 <button className="primary-button" type="button" onClick={downloadResult}>

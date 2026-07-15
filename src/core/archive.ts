@@ -18,13 +18,13 @@ function assertZipSignature(bytes: Uint8Array): void {
     (bytes[3] === 0x04 || bytes[3] === 0x06 || bytes[3] === 0x08)
 
   if (!isZip) {
-    throw new SecurityError('INVALID_DOCUMENT', 'The file is not a valid ZIP-based EPUB.')
+    throw new SecurityError('INVALID_DOCUMENT', 'The file is not a valid ZIP-based ebook archive.')
   }
 }
 
 export function openSecureArchive(bytes: Uint8Array): SecureArchive {
   if (bytes.byteLength > SECURITY_POLICY.maxInputBytes) {
-    throw new SecurityError('LIMIT_EXCEEDED', 'The EPUB exceeds the 80 MB input limit.')
+    throw new SecurityError('LIMIT_EXCEEDED', 'The ebook archive exceeds the 80 MB input limit.')
   }
   assertZipSignature(bytes)
 
@@ -35,18 +35,18 @@ export function openSecureArchive(bytes: Uint8Array): SecureArchive {
   const filter = (file: UnzipFileInfo): boolean => {
     entryCount += 1
     if (entryCount > SECURITY_POLICY.maxEntries) {
-      throw new SecurityError('LIMIT_EXCEEDED', 'The EPUB contains too many archive entries.')
+      throw new SecurityError('LIMIT_EXCEEDED', 'The ebook archive contains too many entries.')
     }
 
     const path = validateArchiveEntryName(file.name)
     const comparisonKey = path.toLocaleLowerCase('en-US')
     if (seen.has(comparisonKey)) {
-      throw new SecurityError('UNSAFE_ARCHIVE', 'The EPUB contains ambiguous duplicate file paths.')
+      throw new SecurityError('UNSAFE_ARCHIVE', 'The ebook archive contains ambiguous duplicate file paths.')
     }
     seen.add(comparisonKey)
 
     if (!Number.isSafeInteger(file.originalSize) || file.originalSize < 0) {
-      throw new SecurityError('UNSAFE_ARCHIVE', 'The EPUB reports an invalid file size.')
+      throw new SecurityError('UNSAFE_ARCHIVE', 'The ebook archive reports an invalid file size.')
     }
     if (file.originalSize > SECURITY_POLICY.maxEntryBytes) {
       throw new SecurityError('LIMIT_EXCEEDED', `Archive entry "${path}" is too large.`)
@@ -54,7 +54,7 @@ export function openSecureArchive(bytes: Uint8Array): SecureArchive {
 
     declaredBytes += file.originalSize
     if (declaredBytes > SECURITY_POLICY.maxTotalUncompressedBytes) {
-      throw new SecurityError('LIMIT_EXCEEDED', 'The unpacked EPUB would exceed the total size limit.')
+      throw new SecurityError('LIMIT_EXCEEDED', 'The unpacked ebook would exceed the total size limit.')
     }
 
     const ratio = file.originalSize / Math.max(file.size, 1)
@@ -82,7 +82,7 @@ export function openSecureArchive(bytes: Uint8Array): SecureArchive {
     const path = validateArchiveEntryName(rawPath)
     actualBytes += data.byteLength
     if (data.byteLength > SECURITY_POLICY.maxEntryBytes || actualBytes > SECURITY_POLICY.maxTotalUncompressedBytes) {
-      throw new SecurityError('LIMIT_EXCEEDED', 'The unpacked EPUB exceeds a security limit.')
+      throw new SecurityError('LIMIT_EXCEEDED', 'The unpacked ebook exceeds a security limit.')
     }
     entries.set(path, data)
   }

@@ -50,6 +50,11 @@ function thirdPartyLicenses(): Plugin {
         fileName: 'THIRD_PARTY_LICENSES/PDF.js-LICENSE.txt',
         source: readFileSync(new URL('./THIRD_PARTY_LICENSES/PDF.js-LICENSE.txt', import.meta.url), 'utf8'),
       })
+      this.emitFile({
+        type: 'asset',
+        fileName: 'THIRD_PARTY_LICENSES/pdf-lib-LICENSE.md',
+        source: readFileSync(new URL('./THIRD_PARTY_LICENSES/pdf-lib-LICENSE.md', import.meta.url), 'utf8'),
+      })
     },
   }
 }
