@@ -21,16 +21,26 @@ The baseline inspected on 14 July 2026 was upstream commit
 | Supply chain | Release commands used dynamically resolved tooling | Exact lockfile, SHA-pinned Actions and Dependabot |
 | Image handling | Referenced files could pass through without format-specific sanitization | Raster signatures are verified; SVG scripts, events, active elements and unsafe references are stripped |
 | LLM ingestion | No dedicated output contract | Stable figure IDs synchronize normalized Markdown, safe assets and a rebuilt passive visual EPUB; instruction-like text is reported without deletion |
-| Format scope | EPUB | EPUB 2/3 including visual SVG/raster spine items, plus text-based PDF |
+| Format scope | EPUB | EPUB 2/3, FictionBook 2 and PDF with synchronized text/visual outputs |
 
 ## PDF-specific design
 
-PDF support uses the maintained `pdfjs-dist` package but intentionally does not embed the PDF
-viewer. The converter requests text content only. Network loading, XFA, rendering, fonts, images
-and WASM are disabled, and the outer worker remains subject to the same watchdog as EPUB parsing.
+PDF support uses the maintained `pdfjs-dist` package but intentionally does not embed its viewer.
+The converter extracts text and renders pages to bounded offscreen canvases with annotations
+disabled. Network loading, XFA, system fonts, browser image decoders and WASM are disabled, and
+the outer worker remains subject to the same watchdog as ebook parsing. `pdf-lib` then builds a
+new document containing only the JPEG page renderings; the original object graph is not copied.
 
-This approach favors a smaller attack surface over visual fidelity. It will not reproduce page
-layout and does not attempt OCR.
+This preserves visible page content and placement while discarding source links, forms, scripts,
+attachments and annotations. It does not attempt OCR, so scanned text remains visual only.
+
+## FB2-specific design
+
+FictionBook is parsed as ordered XML so sections, notes and images retain their document position.
+DTD/entity declarations and unsupported encodings are rejected. Embedded Base64 data is decoded
+under individual and aggregate limits, raster signatures are verified and SVG is sanitized. The
+same canonical Markdown and rebuilt visual EPUB contract used for EPUB is then generated from the
+safe intermediate representation; source XML is never copied to the companion.
 
 ## SVG-specific design
 
@@ -53,7 +63,8 @@ appendix so sanitization does not silently discard potentially meaningful inform
 
 The automated suite covers normal conversion plus traversal paths, duplicate archive names,
 extreme compression, XML entities, legacy EPUB 2 doctypes, active HTML, hostile SVG, visual SVG
-spine items, remote URLs and PDF text extraction. The full
+spine items, FB2 notes/images/Base64 mismatches, remote URLs, PDF text extraction and passive PDF
+rebuilding. The full
 gate is:
 
 ```text

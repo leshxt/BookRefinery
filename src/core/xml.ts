@@ -17,11 +17,62 @@ const parser = new XMLParser({
   ignorePiTags: true,
 })
 
+const orderedParser = new XMLParser({
+  preserveOrder: true,
+  ignoreAttributes: false,
+  attributeNamePrefix: '',
+  removeNSPrefix: true,
+  processEntities: false,
+  parseTagValue: false,
+  parseAttributeValue: false,
+  trimValues: false,
+  ignoreDeclaration: true,
+  ignorePiTags: true,
+})
+
+const XML_ENCODINGS = new Map<string, string>([
+  ['utf-8', 'utf-8'],
+  ['utf8', 'utf-8'],
+  ['utf-16', 'utf-16le'],
+  ['utf-16le', 'utf-16le'],
+  ['utf-16be', 'utf-16be'],
+  ['windows-1251', 'windows-1251'],
+  ['cp1251', 'windows-1251'],
+  ['windows-1252', 'windows-1252'],
+  ['cp1252', 'windows-1252'],
+  ['iso-8859-1', 'windows-1252'],
+])
+
 export function decodeUtf8(bytes: Uint8Array, label: string): string {
   try {
     return new TextDecoder('utf-8', { fatal: true }).decode(bytes)
   } catch {
     throw new SecurityError('INVALID_DOCUMENT', `${label} is not valid UTF-8.`)
+  }
+}
+
+export function decodeXmlText(bytes: Uint8Array, label: string): string {
+  let encoding = 'utf-8'
+  if (bytes[0] === 0xff && bytes[1] === 0xfe) encoding = 'utf-16le'
+  else if (bytes[0] === 0xfe && bytes[1] === 0xff) encoding = 'utf-16be'
+  else if (bytes[0] === 0x3c && bytes[1] === 0x00) encoding = 'utf-16le'
+  else if (bytes[0] === 0x00 && bytes[1] === 0x3c) encoding = 'utf-16be'
+  else {
+    const declaration = new TextDecoder('windows-1252').decode(bytes.subarray(0, 512))
+    const declared = /<\?xml\s[^>]*\bencoding\s*=\s*["']\s*([^"']+?)\s*["']/iu.exec(declaration)?.[1]
+    if (declared) {
+      const normalized = XML_ENCODINGS.get(declared.toLocaleLowerCase('en-US'))
+      if (!normalized) {
+        throw new SecurityError('UNSUPPORTED_DOCUMENT', `${label} declares the unsupported XML encoding "${declared}".`)
+      }
+      encoding = normalized
+    }
+  }
+
+  try {
+    return new TextDecoder(encoding, { fatal: true }).decode(bytes)
+  } catch {
+    throw new SecurityError('INVALID_DOCUMENT', `${label} is not valid ${encoding.toUpperCase()}.`)
   }
 }
 
@@ -35,6 +86,22 @@ export function parseXmlSecure(bytes: Uint8Array, label: string): unknown {
 
   try {
     const parsed: unknown = parser.parse(xml)
+    return parsed
+  } catch {
+    throw new SecurityError('INVALID_DOCUMENT', `${label} contains invalid XML.`)
+  }
+}
+
+export function parseXmlOrderedSecure(bytes: Uint8Array, label: string, maxBytes: number): unknown {
+  if (bytes.byteLength > maxBytes) {
+    throw new SecurityError('LIMIT_EXCEEDED', `${label} exceeds the XML size limit.`)
+  }
+
+  const xml = decodeXmlText(bytes, label)
+  assertNoUnsafeXmlMarkup(xml, label)
+
+  try {
+    const parsed: unknown = orderedParser.parse(xml)
     return parsed
   } catch {
     throw new SecurityError('INVALID_DOCUMENT', `${label} contains invalid XML.`)

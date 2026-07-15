@@ -1,26 +1,6 @@
-# Third-party notices
-
-Book2Markdown is an independent, substantially rewritten derivative inspired by
-[`uxiew/epub2MD`](https://github.com/uxiew/epub2MD). It is not affiliated with or
-endorsed by the original project.
-
-Book2Markdown also uses Mozilla PDF.js (`pdfjs-dist`) under the Apache License 2.0
-for local PDF parsing and text extraction. The package is used without its viewer,
-network loading, form rendering or scripting features. See
-[`mozilla/pdf.js`](https://github.com/mozilla/pdf.js) and the license distributed
-with the npm package.
-An exact copy is included at `THIRD_PARTY_LICENSES/PDF.js-LICENSE.txt`.
-
-Book2Markdown uses pdf-lib under the MIT License to build new passive visual PDF
-companions from locally rendered JPEG page images. It does not copy the source
-PDF object graph. See [`Hopding/pdf-lib`](https://github.com/Hopding/pdf-lib).
-An exact copy is included at `THIRD_PARTY_LICENSES/pdf-lib-LICENSE.md`.
-
-## epub2MD
-
 MIT License
 
-Copyright (c) 2021 ChandlerVer5
+Copyright (c) 2019 Andrew Dillon
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

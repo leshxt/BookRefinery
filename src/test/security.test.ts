@@ -8,6 +8,7 @@ import { resolveArchiveReference, validateArchiveEntryName } from '../core/path'
 import { sanitizeSvg } from '../core/svg'
 import { parseXmlSecure } from '../core/xml'
 import { makeEpub } from './fixtures'
+import { makeFb2 } from './fb2-fixture'
 import { makePdf } from './pdf-fixture'
 
 describe('archive path hardening', () => {
@@ -253,9 +254,10 @@ describe('secure PDF conversion', () => {
     expect(result.summary.format).toBe('pdf')
     expect(result.summary.units).toBe(2)
     expect(document).toContain('# Test PDF')
-    expect(document).toContain('## Page 1')
+    expect(document).toContain('## PAGE-0001 — Page 1')
     expect(document).toContain('Hallo PDF')
-    expect(document).toContain('## Page 2')
+    expect(document).toContain('## PAGE-0002 — Page 2')
+    expect(Object.keys(output)).toContain('notebooklm/document.md')
     expect(Object.keys(output)).toContain('SECURITY-REPORT.md')
   })
 
@@ -268,6 +270,47 @@ describe('secure PDF conversion', () => {
   })
 
   it('rejects unknown input formats before parsing', async () => {
-    await expect(convertDocument(strToU8('not an ebook'), 'fake.bin')).rejects.toThrow(/neither a supported EPUB nor a PDF/u)
+    await expect(convertDocument(strToU8('not an ebook'), 'fake.bin')).rejects.toThrow(/not a supported EPUB, FB2, or PDF/u)
+  })
+})
+
+describe('secure FB2 conversion', () => {
+  it.each([
+    ['plain', false],
+    ['compressed', true],
+  ] as const)('converts a %s FB2 with graphics and notes', async (_label, zipped) => {
+    const result = await convertDocument(makeFb2({ zipped }), zipped ? 'visual.fb2.zip' : 'visual.fb2')
+    const output = unzipSync(result.archive)
+    const book = strFromU8(output['book.md']!)
+    const llmBook = strFromU8(output['notebooklm/book.md']!)
+    const visualEpub = unzipSync(output['notebooklm/book.sanitized.epub']!)
+
+    expect(result.summary.format).toBe('fb2')
+    expect(result.summary.assets).toBe(2)
+    expect(book).toContain('# Visual FB2 Test')
+    expect(book).toContain('Kapitel Eins')
+    expect(book).toContain('FIG\\-0002')
+    expect(book.indexOf('Vor der Grafik.')).toBeLessThan(book.indexOf('FIG\\-0002'))
+    expect(book.indexOf('FIG\\-0002')).toBeLessThan(book.indexOf('Nach der Grafik'))
+    expect(llmBook).toContain('einer Notiz (see note #note\\-one)')
+    expect(llmBook).toContain('Wichtiger Notiztext.')
+    expect(Object.keys(visualEpub)).toContain('EPUB/assets/FIG-0001-cover.png')
+    expect(Object.keys(visualEpub)).toContain('EPUB/assets/FIG-0002-diagram.png')
+  })
+
+  it('rejects unsafe XML declarations before parsing FB2 content', async () => {
+    const xml = '<!DOCTYPE FictionBook [<!ENTITY x "boom">]><FictionBook><body><section><p>&x;</p></section></body></FictionBook>'
+    await expect(convertDocument(makeFb2({ xml }), 'unsafe.fb2')).rejects.toThrow(/forbidden DTD or entity/u)
+  })
+
+  it('omits a binary whose declared image type does not match its signature', async () => {
+    const xml = `<?xml version="1.0" encoding="UTF-8"?><FictionBook xmlns:l="http://www.w3.org/1999/xlink">
+      <description><title-info><book-title>Mismatch</book-title></title-info></description>
+      <body><section><title><p>One</p></title><image l:href="#bad"/></section></body>
+      <binary id="bad" content-type="image/png">bm90IGEgcG5n</binary>
+    </FictionBook>`
+    const result = await convertDocument(makeFb2({ xml }), 'mismatch.fb2')
+    expect(result.summary.assets).toBe(0)
+    expect(result.summary.warnings.some((warning) => warning.includes('signature'))).toBe(true)
   })
 })

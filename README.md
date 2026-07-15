@@ -1,20 +1,24 @@
 # Book2Markdown
 
-**Convert EPUB and PDF ebooks to clean Markdown — locally, with untrusted input in mind.**
+**Convert EPUB, FB2 and PDF ebooks to clean Markdown — locally, with untrusted input in mind.**
 
 Book2Markdown is a browser-based converter with no backend and no upload. The document
 stays on the device, parsing runs in a disposable worker, and the production build cannot
 make network connections.
+
+![Book2Markdown local conversion interface](docs/assets/book2markdown-ui.png)
 
 ## Supported formats
 
 | Input | Output | Notes |
 |---|---|---|
 | EPUB 2/3 | General Markdown bundle plus synchronized LLM package | Preserves signature-checked raster images and allowlist-sanitized SVG at their reading positions |
-| Text-based PDF | `document.md`, separated by page | Extracts text only; no forms, attachments, scripts or images |
+| FictionBook 2 (`.fb2`, `.fb2.zip`) | Same synchronized book package as EPUB | Preserves sections, notes, cover art and embedded signature-checked or sanitized images at their reading positions |
+| PDF | Synchronized visual PDF and page-separated Markdown | Re-renders whole pages so raster images, vector graphics, tables and layout stay together; original active objects are not copied |
 
-Scanned PDFs need OCR, which is intentionally not part of the current release. PDF is a
-layout format, so complex columns, tables and reading order may require manual cleanup.
+Scanned PDF pages remain visible in the visual companion, but they need OCR before they can
+produce Markdown text. PDF is a layout format, so complex columns, tables and reading order may
+still require manual Markdown cleanup.
 
 ## Start the app
 
@@ -41,7 +45,7 @@ when hosting it.
 
 ## What the export contains
 
-EPUB exports contain:
+EPUB and FB2 exports contain:
 
 - `book.md` with the complete book and stable `FIG-xxxx` markers at the original image positions;
 - one Markdown file per text or visual spine item under `chapters/`;
@@ -50,14 +54,17 @@ EPUB exports contain:
 - a synchronized multimodal package under `notebooklm/`;
 - `SECURITY-REPORT.md` with enforced limits and removed content.
 
-PDF exports contain `document.md` plus the security report. Images, file attachments,
-annotations, forms and embedded JavaScript are not exported.
+PDF exports contain `notebooklm/document.visual.pdf`, matching `PAGE-xxxx` sections in
+`document.md`, import guidance and the security report. The visual PDF is a new document made
+only from locally rendered JPEG pages. It preserves the complete visible page rather than trying
+to guess which embedded objects count as images. Original links, forms, file attachments,
+annotations, scripts and PDF object structures are not copied.
 
 ## NotebookLM and multimodal LLMs
 
 For NotebookLM, start with **`notebooklm/book.sanitized.epub` only**. It is the primary source and
 already contains the complete text plus the actual sanitized graphics at matching `FIG-xxxx`
-positions without copying the source EPUB's scripts, forms, remote resources or original HTML.
+positions without copying the source ebook's scripts, forms, remote resources or original markup.
 Using one source avoids duplicate passages and competing citations.
 
 `notebooklm/book.md` is an optional text-only fallback. Add it only when EPUB text retrieval or
@@ -66,7 +73,7 @@ heading levels, metadata, a table of contents, retained cross-chapter references
 Do not select both sources by default.
 
 `FIGURE-INDEX.md` maps every graphic to its chapter, caption or alt text, nearby text and safe
-asset. Graphics present in the EPUB package but absent from the readable spine are retained in a
+asset. Graphics present in the EPUB or FB2 package but absent from the readable body are retained in a
 clearly labeled appendix instead of disappearing silently. Declared EPUB navigation documents are
 excluded from the canonical LLM text to avoid duplicate table-of-contents boilerplate; arbitrary
 copyright or front-matter content is not heuristically deleted.
@@ -78,6 +85,12 @@ remains available through the companion EPUB. Do not also upload `chapters/` unl
 is intentional. Alt text and captions improve retrieval but do not replace inspection of the
 actual pixels.
 
+For PDF, start with **`notebooklm/document.visual.pdf` only**. Every page is flattened to passive
+pixels, which keeps photographs, diagrams, vector art, tables and their exact placement together.
+`PAGE-0001` in `document.md` maps to page 1 in that visual PDF. Add `document.md` only if the target
+model's text retrieval from the visual PDF is incomplete; using both by default can duplicate
+passages and citations.
+
 `LLM-SAFETY-REPORT.md` flags a small set of common instruction-like patterns. It never deletes the
 book passage: legitimate fiction, security writing or quoted prompts must remain intact.
 
@@ -87,9 +100,11 @@ Book2Markdown treats every input as hostile:
 
 - all parsing happens in a dedicated worker with a 120-second watchdog;
 - the production CSP includes `connect-src 'none'`;
-- ZIP paths, entry counts, sizes and compression ratios are checked before EPUB extraction;
+- ZIP paths, entry counts, sizes and compression ratios are checked before EPUB or compressed-FB2 extraction;
 - XML entities and internal DTD subsets are rejected; inert legacy XHTML doctypes are stripped;
-- PDF.js receives local bytes only, with fetching, rendering, XFA, system fonts and WASM disabled;
+- FB2 uses an XML-encoding allowlist, bounded Base64 decoding and the same raster/SVG image checks as EPUB;
+- PDF.js receives local bytes only, with fetching, XFA, system fonts, browser image decoders and WASM disabled;
+- PDF annotations are disabled during page rendering, and a new PDF is built only from bounded JPEG page images;
 - untrusted HTML or Markdown is never rendered in the application;
 - SVG scripts, event handlers, remote or embedded sources, active elements and unsafe styles are removed;
 - the visual companion EPUB is rebuilt from passive generated XHTML and already-sanitized assets,
@@ -119,8 +134,8 @@ and workflow dependencies weekly.
 
 Book2Markdown is an independent rewrite inspired by
 [`uxiew/epub2MD`](https://github.com/uxiew/epub2MD). The original MIT notice is preserved in
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). PDF parsing is powered by Mozilla PDF.js
-under Apache-2.0.
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). PDF parsing/rendering is powered by Mozilla
+PDF.js under Apache-2.0; passive PDF rebuilding uses pdf-lib under MIT.
 
 ## License
 

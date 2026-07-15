@@ -2,6 +2,8 @@ import { strToU8, zipSync } from 'fflate'
 import { openSecureArchive } from './archive'
 import { readEpubPackage, type ManifestItem } from './epub'
 import { SecurityError } from './errors'
+import { convertFb2, convertFb2Zip } from './fb2'
+import { figureId, outputAssetName, outputAssetPath, rasterDescriptor } from './images'
 import {
   annotateMarkdownFigures,
   buildLlmExport,
@@ -16,11 +18,6 @@ import { SECURITY_POLICY } from './policy'
 import { sanitizeSvg } from './svg'
 import { decodeUtf8, stripInertDocumentTypes } from './xml'
 
-interface RasterDescriptor {
-  readonly extension: string
-  readonly signature: (bytes: Uint8Array) => boolean
-}
-
 interface AssetTarget {
   readonly outputPath: string
   readonly kind: 'raster' | 'svg'
@@ -29,40 +26,13 @@ interface AssetTarget {
   readonly defaultLabel: string
 }
 
-const RASTER_TYPES = new Map<string, RasterDescriptor>([
-  ['image/png', {
-    extension: 'png',
-    signature: (bytes) =>
-      bytes.byteLength >= 8 &&
-      [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a].every((value, index) => bytes[index] === value),
-  }],
-  ['image/jpeg', {
-    extension: 'jpg',
-    signature: (bytes) => bytes.byteLength >= 4 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff,
-  }],
-  ['image/gif', {
-    extension: 'gif',
-    signature: (bytes) => {
-      const header = String.fromCharCode(...bytes.slice(0, 6))
-      return bytes.byteLength >= 6 && (header === 'GIF87a' || header === 'GIF89a')
-    },
-  }],
-  ['image/webp', {
-    extension: 'webp',
-    signature: (bytes) =>
-      bytes.byteLength >= 12 &&
-      String.fromCharCode(...bytes.slice(0, 4)) === 'RIFF' &&
-      String.fromCharCode(...bytes.slice(8, 12)) === 'WEBP',
-  }],
-])
-
 export interface ConversionProgress {
   readonly percent: number
   readonly label: string
 }
 
 export interface ConversionSummary {
-  readonly format: 'epub' | 'pdf'
+  readonly format: 'epub' | 'fb2' | 'pdf'
   readonly title: string
   readonly author?: string
   readonly language?: string
@@ -147,20 +117,6 @@ function assetBaseName(item: ManifestItem, fallback: string): string {
   return item.path.split('/').at(-1)?.replace(/\.[^.]+$/u, '') ?? fallback
 }
 
-function outputAssetPath(sequence: number, baseName: string, extension: string): string {
-  const fallback = `image-${sequence}`
-  const safeBaseName = safeOutputName(baseName, fallback).replace(/[()]/gu, '-')
-  return `assets/${figureId(sequence)}-${safeBaseName}.${extension}`
-}
-
-function figureId(sequence: number): string {
-  return `FIG-${String(sequence).padStart(4, '0')}`
-}
-
-function outputAssetName(outputPath: string): string | null {
-  return outputPath.split('/').at(-1) ?? null
-}
-
 export function convertEpub(
   bytes: Uint8Array,
   sourceName: string,
@@ -178,7 +134,7 @@ export function convertEpub(
   let assetSequence = 0
 
   for (const item of epub.manifest) {
-    const descriptor = RASTER_TYPES.get(item.mediaType)
+    const descriptor = rasterDescriptor(item.mediaType)
     if (!descriptor) continue
     const data = archive.entries.get(item.path)
     if (!data || !descriptor.signature(data)) {
@@ -348,6 +304,7 @@ export function convertEpub(
   const llmExport = buildLlmExport(
     {
       title: epub.title,
+      sourceFormat: 'EPUB',
       ...(epub.author ? { author: epub.author } : {}),
       ...(epub.language ? { language: epub.language } : {}),
     },
@@ -394,7 +351,7 @@ export function convertEpub(
   }
 }
 
-function inputFormat(bytes: Uint8Array): 'epub' | 'pdf' {
+function inputFormat(bytes: Uint8Array, sourceName: string): 'epub' | 'fb2' | 'fb2zip' | 'pdf' {
   const isPdf =
     bytes.byteLength >= 5 &&
     bytes[0] === 0x25 &&
@@ -405,9 +362,19 @@ function inputFormat(bytes: Uint8Array): 'epub' | 'pdf' {
   if (isPdf) return 'pdf'
 
   const isZip = bytes.byteLength >= 4 && bytes[0] === 0x50 && bytes[1] === 0x4b
-  if (isZip) return 'epub'
+  if (isZip) {
+    const archive = openSecureArchive(bytes)
+    if (archive.entries.has('META-INF/container.xml')) return 'epub'
+    const fb2Files = [...archive.entries.keys()].filter((path) => path.toLocaleLowerCase('en-US').endsWith('.fb2'))
+    if (fb2Files.length > 0 || sourceName.toLocaleLowerCase('en-US').endsWith('.fb2.zip')) return 'fb2zip'
+    return 'epub'
+  }
 
-  throw new SecurityError('INVALID_DOCUMENT', 'The file is neither a supported EPUB nor a PDF.')
+  if (sourceName.toLocaleLowerCase('en-US').endsWith('.fb2')) return 'fb2'
+  const prefix = new TextDecoder('windows-1252').decode(bytes.subarray(0, 2_048)).replace(/\u0000/gu, '')
+  if (/<(?:[A-Za-z_][\w.-]*:)?FictionBook\b/iu.test(prefix)) return 'fb2'
+
+  throw new SecurityError('INVALID_DOCUMENT', 'The file is not a supported EPUB, FB2, or PDF document.')
 }
 
 export async function convertDocument(
@@ -419,7 +386,9 @@ export async function convertDocument(
     throw new SecurityError('LIMIT_EXCEEDED', 'The file exceeds the 80 MB input limit.')
   }
 
-  return inputFormat(bytes) === 'pdf'
-    ? convertPdf(bytes, sourceName, onProgress)
-    : convertEpub(bytes, sourceName, onProgress)
+  const format = inputFormat(bytes, sourceName)
+  if (format === 'pdf') return convertPdf(bytes, sourceName, onProgress)
+  if (format === 'fb2') return convertFb2(bytes, sourceName, onProgress)
+  if (format === 'fb2zip') return convertFb2Zip(bytes, sourceName, onProgress)
+  return convertEpub(bytes, sourceName, onProgress)
 }

@@ -8,6 +8,8 @@ its privacy and hostile-input boundaries.
 - Hardened EPUB 2/3 conversion
 - Signature-checked raster graphics and allowlist-sanitized SVG, including visual spine items
 - Text-based PDF conversion
+- Passive whole-page PDF companion with stable page IDs
+- Plain and compressed FictionBook 2 conversion with the same multimodal image contract as EPUB
 - Chapter/page separation and security report
 - Local browser UI with no backend
 - Synchronized Markdown + sanitized visual EPUB package with stable figure IDs for multimodal notebooks
@@ -20,7 +22,7 @@ its privacy and hostile-input boundaries.
 - Batch conversion with independent limits per document
 - Reproducible downloadable desktop packaging
 - More adversarial corpus and fuzz testing
-- Optional safe PDF figure or page-image extraction after a dedicated rendering threat review
+- Better adaptive quality and performance for very large visual PDF companions
 - Optional fully local OCR for text inside EPUB figures, provided language data and resource use can remain bounded
 - Optional local visual descriptions for diagrams after a privacy-preserving model and threat review
 
