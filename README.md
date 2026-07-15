@@ -68,10 +68,12 @@ clearly labeled appendix instead of disappearing silently. Declared EPUB navigat
 excluded from the canonical LLM text to avoid duplicate table-of-contents boilerplate; arbitrary
 copyright or front-matter content is not heuristically deleted.
 
-NotebookLM officially accepts Markdown, EPUB and standalone image sources. If it fails to inspect
-an embedded figure, add the matching `assets/FIG-xxxx-*` file as a separate image source. Do not
-also upload `chapters/` unless duplicate text is intentional. Alt text and captions improve
-retrieval but do not replace inspection of the actual pixels.
+NotebookLM officially accepts Markdown, EPUB and several standalone raster image formats. If it
+fails to inspect an embedded raster figure, add the matching PNG, JPEG, GIF or WebP file from
+`assets/` as a separate image source. Standalone SVG is not listed as supported, so sanitized SVG
+remains available through the companion EPUB. Do not also upload `chapters/` unless duplicate text
+is intentional. Alt text and captions improve retrieval but do not replace inspection of the
+actual pixels.
 
 `LLM-SAFETY-REPORT.md` flags a small set of common instruction-like patterns. It never deletes the
 book passage: legitimate fiction, security writing or quoted prompts must remain intact.
