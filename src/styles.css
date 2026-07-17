@@ -87,8 +87,11 @@ main { padding-bottom: 90px; }
 .desktop-install strong { display: block; color: #e7f7ef; font-size: .83rem; }
 .desktop-install p { margin: 4px 0 0; color: var(--muted); font-size: .69rem; line-height: 1.45; }
 .desktop-install p code { color: #bad4c8; }
-.desktop-install button { padding: 9px 12px; border: 1px solid rgba(88,240,177,.35); border-radius: 9px; background: var(--mint); color: var(--ink); cursor: pointer; font-size: .72rem; font-weight: 750; }
+.desktop-install-actions { display: flex; align-items: center; gap: 10px; }
+.desktop-install button { padding: 9px 12px; border: 1px solid rgba(88,240,177,.35); border-radius: 9px; background: var(--mint); color: var(--ink); cursor: pointer; font-size: .72rem; font-weight: 750; white-space: nowrap; }
 .desktop-install button:hover { background: var(--mint-bright); }
+.desktop-install-actions a { color: #cce4d9; font-size: .7rem; font-weight: 680; text-underline-offset: 3px; white-space: nowrap; }
+.desktop-install-actions a:hover { color: var(--mint); }
 .desktop-install-state, .desktop-install-help { color: #bcd2c8; font-size: .7rem; white-space: nowrap; }
 .desktop-install-state { color: var(--mint); font-weight: 700; }
 
@@ -272,9 +275,11 @@ footer a:hover { color: var(--mint); }
   .outcome-grid article { padding: 24px; }
   .outcome-grid h3 { margin-top: 22px; }
   .desktop-install { grid-template-columns: auto minmax(0, 1fr); }
-  .desktop-install > button, .desktop-install-state, .desktop-install-help { grid-column: 1 / -1; }
-  .desktop-install > button { width: 100%; }
-  .desktop-install-state, .desktop-install-help { padding-left: 51px; white-space: normal; }
+  .desktop-install-actions, .desktop-install > .desktop-install-state { grid-column: 1 / -1; }
+  .desktop-install-actions { align-items: flex-start; flex-direction: column; padding-left: 51px; }
+  .desktop-install-actions button { width: 100%; }
+  .desktop-install > .desktop-install-state { padding-left: 51px; }
+  .desktop-install-help { white-space: normal; }
   .studio-card { border-radius: 20px; }
   .dropzone { min-height: 205px; padding: 22px; text-align: center; }
   .compact-dropzone { min-height: 116px; flex-direction: row; text-align: left; }

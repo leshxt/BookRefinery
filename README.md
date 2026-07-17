@@ -3,10 +3,10 @@
 **Safe ebook preparation for NotebookLM, RAG, Markdown, and long-term archives — local,
 multimodal, and built for untrusted input.**
 
-BookRefinery is an installable browser app by [`leshxt`](https://github.com/leshxt). It inspects,
-sanitizes, optionally OCRs, and restructures EPUB, FictionBook 2, and PDF ebooks without uploading
-them. Searchable text remains connected to essential graphics and page visuals; scripts, remote
-resources, forms, attachments, and active markup do not enter the prepared output.
+BookRefinery is a local browser and native desktop app by [`leshxt`](https://github.com/leshxt). It
+inspects, sanitizes, optionally OCRs, and restructures EPUB, FictionBook 2, and PDF ebooks without
+uploading them. Searchable text remains connected to essential graphics and page visuals; scripts,
+remote resources, forms, attachments, and active markup do not enter the prepared output.
 
 ![BookRefinery private ebook preparation workspace](docs/assets/bookrefinery-ui.png)
 
@@ -85,21 +85,54 @@ Open the local URL printed by Vite, normally `http://localhost:5173`.
 
 ### Install as a desktop app
 
-The current desktop release is an installable offline-capable PWA, not a native `.exe`. Build and
-serve the production version:
+Native packages are published on the
+[GitHub Releases page](https://github.com/leshxt/BookRefinery/releases):
+
+- **Windows:** download the `BookRefinery_..._windows_...-setup.exe` NSIS installer.
+- **Linux:** download the `.AppImage` for a portable launch or the `.deb` package for Debian/Ubuntu.
+
+The native build uses the operating system WebView and deliberately exposes no Tauri file-system,
+shell, network, updater, or custom command capabilities. Files still enter through the browser File
+API and all document processing remains in the existing disposable workers. The initial community
+packages are not code-signed, so Windows may display a SmartScreen warning.
+
+On Windows, the shared Microsoft WebView2 runtime may independently contact Microsoft's
+Experimentation and Configuration Service during startup. BookRefinery's frontend CSP still blocks
+application-originated network requests, and document bytes are never uploaded. This runtime
+exception and the best-effort background-traffic reductions are documented in
+[SECURITY.md](SECURITY.md).
+
+For Chrome and Edge, BookRefinery also remains installable as an offline-capable PWA. Build and serve
+the web production version:
 
 ```powershell
 npm run build
 npm run preview
 ```
 
-Open the preview URL. In Chrome or Edge, use the visible **Install desktop app** button once the
-browser reports that the app is installable. Other supporting browsers expose the equivalent action
-in their browser menu. The installed app gets its own window and launcher icon.
+Open the preview URL, then use the visible **Install browser app** button once the browser reports
+that the app is installable. Firefox desktop does not currently provide manifest-based PWA
+installation; use a native package there instead. The installed PWA gets its own window and launcher
+icon.
 
 The production build generates a versioned service worker that precaches the complete app, PDF
 runtime, OCR worker, WebAssembly core, and English/German language data for subsequent offline use.
-A separately packaged and signed native Windows `.exe` is not part of this release.
+
+To build the native package from source, install the current Rust toolchain and the
+[Tauri platform prerequisites](https://v2.tauri.app/start/prerequisites/), then run:
+
+```powershell
+npm ci
+npm run desktop:build:windows
+```
+
+For a local RustSec dependency scan, install `cargo-audit` and run `npm run desktop:audit`.
+GitHub CI performs the same audit automatically and fails on vulnerability advisories.
+
+Linux bundles are built on Ubuntu 22.04 in the release workflow because AppImage compatibility
+depends on the build system's glibc and WebKitGTK baseline. Pushing a `desktop-v*` tag, or manually
+starting **Build desktop installers**, creates a prerelease with the Windows NSIS installer, Linux
+AppImage, and Debian package.
 
 ## Security model
 
@@ -134,6 +167,8 @@ npm run verify
 high-severity production dependency audit. The test corpus includes deterministic malformed binary
 inputs, archive traversal, XML entities, prompt-injection-like book passages, profile contracts,
 manifest checksums, PDF text extraction, Unicode searchable PDFs, and layout heuristics.
+
+Native changes additionally run a locked Rust compile and RustSec audit in CI.
 
 ## Project history
 

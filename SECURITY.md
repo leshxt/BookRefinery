@@ -3,12 +3,36 @@
 ## Threat model
 
 BookRefinery assumes that every EPUB, FB2 and PDF may be intentionally malicious. The application
-has no backend, never uploads a document and ships with a Content Security Policy that blocks
-all network connections.
+has no backend, never uploads a document and ships with a Content Security Policy that blocks all
+application-originated network connections.
 
 The goal is to reduce exposure to common archive, XML, active-content and resource-exhaustion
 attacks. This is defense in depth, not a proof that every future browser or parser vulnerability
 is impossible.
+
+### Native desktop wrapper
+
+- Windows and Linux packages use a minimal Tauri wrapper around the same production web build.
+- The Rust layer registers no custom commands and loads no file-system, shell, network, dialog,
+  updater, telemetry, or storage plugin.
+- The Tauri capability list is explicitly empty. The frontend receives no native file or process
+  permissions through IPC.
+- HTML5 drag and drop is kept enabled on Windows by disabling Tauri's native file-drop interception;
+  selected files still arrive as bounded browser `File` objects.
+- The service worker is not registered inside the native wrapper. All executable app assets are
+  bundled with the installer.
+- The Windows WebView2 instance requests disabled background networking, DNS prefetching, component
+  updates, crash reporting, domain reliability, sync, first-run traffic, metrics upload, and
+  hyperlink auditing. Host resolution is mapped to failure and an unreachable loopback proxy is
+  configured as additional defense in depth. Bundled custom-protocol resources do not need DNS or
+  the proxy.
+- Those WebView2 command-line switches are not a complete network security boundary. In a live
+  Windows test, the current shared WebView2 runtime still contacted Microsoft's Experimentation and
+  Configuration Service during startup. The app CSP independently rejects frontend requests, no
+  document bytes are passed to the runtime service, and BookRefinery does not modify machine-wide
+  WebView2 policy or firewall settings.
+- Release actions are pinned to exact commits. Windows and Linux builds are produced independently
+  on their native GitHub-hosted runners.
 
 ## Enforced boundaries
 
@@ -73,6 +97,19 @@ is impossible.
 
 - A Web Worker provides termination and UI isolation, but browsers do not expose a strict
   per-worker memory quota.
+- A native wrapper adds the operating system WebView and Tauri runtime to the trusted computing
+  base. Keeping IPC capabilities empty limits the impact, but does not remove WebView, Rust, build
+  pipeline, or installer vulnerabilities.
+- On Windows, the shared WebView2 runtime may make its own Microsoft configuration request even
+  though BookRefinery's application code has no network capability. This is separate from document
+  processing and means the native process tree should not be described as physically offline.
+- Community Windows installers are currently unsigned and may trigger SmartScreen. GitHub release
+  assets should be downloaded only from the official repository and verified before execution.
+- The current Tauri Linux dependency graph inherits informational RustSec warnings for unmaintained
+  GTK3 Rust bindings and `RUSTSEC-2024-0429` in `glib 0.18`. The affected
+  `VariantStrIter` API is not called by BookRefinery or the downloaded Tauri dependency sources, but
+  it remains part of the Linux trusted computing base until Tauri's WebKitGTK stack migrates. CI
+  reports informational advisories and fails on vulnerability advisories.
 - PDF text order is heuristic because PDF stores positioned glyphs rather than semantic blocks.
 - OCR is opt-in and may contain recognition errors. It does not replace extractable source text and
   currently supports the bundled English and German models only.

@@ -11,6 +11,7 @@ import {
 import type { ConversionProgress, ConversionResult } from './core/convert'
 import type { SecurityErrorCode } from './core/errors'
 import { formatBytes, SECURITY_POLICY } from './core/policy'
+import { isNativeDesktopRuntime } from './platform'
 import {
   runConversion,
   runInspection,
@@ -74,6 +75,7 @@ interface AppInstallPromptEvent extends Event {
 type DesktopInstallState =
   | { readonly kind: 'available'; readonly prompt: AppInstallPromptEvent }
   | { readonly kind: 'installed' }
+  | { readonly kind: 'native' }
   | { readonly kind: 'browser-menu' }
 
 function jobsReducer(jobs: readonly Job[], action: JobAction): readonly Job[] {
@@ -235,6 +237,11 @@ function isStandaloneApp(): boolean {
   return window.matchMedia('(display-mode: standalone)').matches
 }
 
+function initialDesktopInstallState(): DesktopInstallState {
+  if (isNativeDesktopRuntime()) return { kind: 'native' }
+  return isStandaloneApp() ? { kind: 'installed' } : { kind: 'browser-menu' }
+}
+
 function outputFormatSummary(profile: OutputProfileId, format: DocumentFormat): string {
   return [...new Set(profileOutputFiles(profile, format).map((file) => file.format))].join(' · ')
 }
@@ -244,13 +251,16 @@ export function App() {
   const [dragging, setDragging] = useState(false)
   const [profile, setProfile] = useState<OutputProfileId>('notebooklm')
   const [ocrEnabled, setOcrEnabled] = useState(false)
-  const [desktopInstall, setDesktopInstall] = useState<DesktopInstallState>(() =>
-    isStandaloneApp() ? { kind: 'installed' } : { kind: 'browser-menu' })
+  const [desktopInstall, setDesktopInstall] = useState<DesktopInstallState>(
+    initialDesktopInstallState,
+  )
   const inspectionControllers = useRef(new Map<string, AbortController>())
   const activeConversion = useRef<AbortController | null>(null)
   const stopBatch = useRef(false)
 
   useEffect(() => {
+    if (isNativeDesktopRuntime()) return
+
     const captureInstallPrompt = (event: Event): void => {
       event.preventDefault()
       setDesktopInstall({
@@ -439,10 +449,13 @@ export function App() {
           {desktopInstall.kind === 'installed' && (
             <span className="install-shortcut is-installed"><DownloadIcon /> Installed</span>
           )}
+          {desktopInstall.kind === 'native' && (
+            <span className="install-shortcut is-installed"><DownloadIcon /> Desktop build</span>
+          )}
           {desktopInstall.kind === 'browser-menu' && (
             <a className="install-shortcut" href="#desktop-install"><DownloadIcon /> Desktop app</a>
           )}
-          <div className="local-badge"><span aria-hidden="true" />100% local</div>
+          <div className="local-badge"><span aria-hidden="true" />Files stay local</div>
         </div>
       </header>
 
@@ -488,15 +501,36 @@ export function App() {
         <aside className="desktop-install" id="desktop-install" aria-labelledby="desktop-install-title">
           <span className="desktop-install-mark"><DownloadIcon /></span>
           <div>
-            <strong id="desktop-install-title">Install BookRefinery on this computer</strong>
-            <p>Offline-capable desktop PWA with its own app window. This release does not include a native <code>.exe</code>.</p>
+            <strong id="desktop-install-title">
+              {desktopInstall.kind === 'native'
+                ? 'Native desktop edition'
+                : 'Install or download BookRefinery'}
+            </strong>
+            <p>
+              {desktopInstall.kind === 'native'
+                ? 'You are running the permission-minimized Windows or Linux desktop build.'
+                : 'Use the Chrome/Edge web install, or download the native Windows and Linux editions.'}
+            </p>
           </div>
           {desktopInstall.kind === 'available' && (
-            <button type="button" onClick={() => void requestDesktopInstall()}>Install desktop app</button>
+            <div className="desktop-install-actions">
+              <button type="button" onClick={() => void requestDesktopInstall()}>Install browser app</button>
+              <a href="https://github.com/leshxt/BookRefinery/releases" target="_blank" rel="noopener noreferrer">
+                Native downloads
+              </a>
+            </div>
           )}
           {desktopInstall.kind === 'installed' && <span className="desktop-install-state">Installed</span>}
+          {desktopInstall.kind === 'native' && (
+            <span className="desktop-install-state">Native · local processing</span>
+          )}
           {desktopInstall.kind === 'browser-menu' && (
-            <span className="desktop-install-help">Browser menu → Install BookRefinery</span>
+            <div className="desktop-install-actions">
+              <span className="desktop-install-help">Firefox: use a native build</span>
+              <a href="https://github.com/leshxt/BookRefinery/releases" target="_blank" rel="noopener noreferrer">
+                Windows &amp; Linux
+              </a>
+            </div>
           )}
         </aside>
 
