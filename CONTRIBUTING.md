@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping improve Book2Markdown.
+Thanks for helping improve BookRefinery.
 
 1. Create a focused branch from `main`.
 2. Keep all document processing local and inside the converter worker.

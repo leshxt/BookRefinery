@@ -1,50 +1,132 @@
-import { useReducer, useRef, type SVGProps } from 'react'
+import { useReducer, useRef, useState, type SVGProps } from 'react'
+import { zipSync } from 'fflate'
+import {
+  OUTPUT_PROFILES,
+  profileOutputFiles,
+  type ConversionOptions,
+  type DocumentFormat,
+  type DocumentInspection,
+  type OutputProfileId,
+} from './core/contracts'
 import type { ConversionProgress, ConversionResult } from './core/convert'
 import type { SecurityErrorCode } from './core/errors'
 import { formatBytes, SECURITY_POLICY } from './core/policy'
-import { runConversion, WorkerConversionError } from './worker/runConversion'
+import {
+  runConversion,
+  runInspection,
+  WorkerConversionError,
+} from './worker/runConversion'
 
-type AppState =
-  | { readonly kind: 'idle'; readonly dragging: boolean }
-  | { readonly kind: 'ready'; readonly dragging: boolean; readonly file: File }
-  | { readonly kind: 'running'; readonly dragging: false; readonly file: File; readonly progress: ConversionProgress }
-  | { readonly kind: 'success'; readonly dragging: boolean; readonly file: File; readonly result: ConversionResult }
-  | { readonly kind: 'error'; readonly dragging: boolean; readonly file: File | null; readonly code: SecurityErrorCode; readonly message: string }
+interface JobBase {
+  readonly id: string
+  readonly file: File
+}
 
-type AppAction =
-  | { readonly type: 'drag'; readonly active: boolean }
-  | { readonly type: 'select'; readonly file: File }
-  | { readonly type: 'start' }
-  | { readonly type: 'progress'; readonly progress: ConversionProgress }
-  | { readonly type: 'success'; readonly result: ConversionResult }
-  | { readonly type: 'failure'; readonly file: File | null; readonly code: SecurityErrorCode; readonly message: string }
-  | { readonly type: 'cancelled' }
-  | { readonly type: 'reset' }
+type Job =
+  | (JobBase & { readonly status: 'inspecting' })
+  | (JobBase & { readonly status: 'ready'; readonly inspection: DocumentInspection })
+  | (JobBase & { readonly status: 'queued'; readonly inspection: DocumentInspection })
+  | (JobBase & {
+      readonly status: 'running'
+      readonly inspection: DocumentInspection
+      readonly progress: ConversionProgress
+    })
+  | (JobBase & {
+      readonly status: 'success'
+      readonly inspection: DocumentInspection
+      readonly result: ConversionResult
+    })
+  | (JobBase & {
+      readonly status: 'error'
+      readonly inspection: DocumentInspection | null
+      readonly code: SecurityErrorCode
+      readonly message: string
+    })
 
-const initialState: AppState = { kind: 'idle', dragging: false }
+type JobAction =
+  | { readonly type: 'add'; readonly jobs: readonly Job[] }
+  | { readonly type: 'inspected'; readonly id: string; readonly inspection: DocumentInspection }
+  | {
+      readonly type: 'failed'
+      readonly id: string
+      readonly inspection: DocumentInspection | null
+      readonly code: SecurityErrorCode
+      readonly message: string
+    }
+  | { readonly type: 'queue'; readonly ids: ReadonlySet<string> }
+  | { readonly type: 'run'; readonly id: string }
+  | { readonly type: 'progress'; readonly id: string; readonly progress: ConversionProgress }
+  | { readonly type: 'complete'; readonly id: string; readonly result: ConversionResult }
+  | { readonly type: 'unqueue' }
+  | { readonly type: 'retry'; readonly id: string }
+  | { readonly type: 'remove'; readonly id: string }
+  | { readonly type: 'clear-finished' }
 
-function reducer(state: AppState, action: AppAction): AppState {
+function jobsReducer(jobs: readonly Job[], action: JobAction): readonly Job[] {
   switch (action.type) {
-    case 'drag':
-      return state.kind === 'running' ? state : { ...state, dragging: action.active }
-    case 'select':
-      return { kind: 'ready', dragging: false, file: action.file }
-    case 'start':
-      return state.kind === 'ready'
-        ? { kind: 'running', dragging: false, file: state.file, progress: { percent: 2, label: 'Reading the file' } }
-        : state
+    case 'add':
+      return [...jobs, ...action.jobs]
+    case 'inspected':
+      return jobs.map((job) =>
+        job.id === action.id && job.status === 'inspecting'
+          ? { id: job.id, file: job.file, status: 'ready', inspection: action.inspection }
+          : job)
+    case 'failed':
+      return jobs.map((job) =>
+        job.id === action.id
+          ? {
+              id: job.id,
+              file: job.file,
+              status: 'error',
+              inspection: action.inspection,
+              code: action.code,
+              message: action.message,
+            }
+          : job)
+    case 'queue':
+      return jobs.map((job) =>
+        job.status === 'ready' && action.ids.has(job.id)
+          ? { ...job, status: 'queued' }
+          : job)
+    case 'run':
+      return jobs.map((job) =>
+        job.id === action.id && job.status === 'queued'
+          ? {
+              ...job,
+              status: 'running',
+              progress: { percent: 2, label: 'Reading the file' },
+            }
+          : job)
     case 'progress':
-      return state.kind === 'running' ? { ...state, progress: action.progress } : state
-    case 'success':
-      return state.kind === 'running'
-        ? { kind: 'success', dragging: false, file: state.file, result: action.result }
-        : state
-    case 'failure':
-      return { kind: 'error', dragging: false, file: action.file, code: action.code, message: action.message }
-    case 'cancelled':
-      return state.kind === 'running' ? { kind: 'ready', dragging: false, file: state.file } : state
-    case 'reset':
-      return initialState
+      return jobs.map((job) =>
+        job.id === action.id && job.status === 'running'
+          ? { ...job, progress: action.progress }
+          : job)
+    case 'complete':
+      return jobs.map((job) =>
+        job.id === action.id && job.status === 'running'
+          ? {
+              id: job.id,
+              file: job.file,
+              status: 'success',
+              inspection: job.inspection,
+              result: action.result,
+            }
+          : job)
+    case 'unqueue':
+      return jobs.map((job) =>
+        job.status === 'queued' ? { ...job, status: 'ready' } : job)
+    case 'retry':
+      return jobs.map((job) => {
+        if (job.id !== action.id || job.status !== 'error') return job
+        return job.inspection
+          ? { id: job.id, file: job.file, status: 'ready', inspection: job.inspection }
+          : { id: job.id, file: job.file, status: 'inspecting' }
+      })
+    case 'remove':
+      return jobs.filter((job) => job.id !== action.id)
+    case 'clear-finished':
+      return jobs.filter((job) => job.status !== 'success' && job.status !== 'error')
   }
 }
 
@@ -74,6 +156,14 @@ function DownloadIcon(props: SVGProps<SVGSVGElement>) {
   )
 }
 
+function GitHubIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" {...props}>
+      <path fill="currentColor" d="M12 2.25a9.75 9.75 0 0 0-3.08 19c.49.09.67-.21.67-.47v-1.9c-2.73.59-3.31-1.16-3.31-1.16-.45-1.13-1.09-1.43-1.09-1.43-.89-.61.07-.6.07-.6.98.07 1.5 1.01 1.5 1.01.87 1.5 2.29 1.06 2.85.81.09-.63.34-1.06.62-1.3-2.18-.25-4.47-1.09-4.47-4.82 0-1.06.38-1.93 1.01-2.61-.1-.25-.44-1.24.1-2.58 0 0 .82-.26 2.68 1a9.29 9.29 0 0 1 4.88 0c1.86-1.26 2.68-1 2.68-1 .54 1.34.2 2.33.1 2.58.63.68 1.01 1.55 1.01 2.61 0 3.74-2.3 4.57-4.48 4.81.35.31.66.91.66 1.84v2.7c0 .26.18.57.67.47A9.75 9.75 0 0 0 12 2.25Z" />
+    </svg>
+  )
+}
+
 function selectError(file: File): { readonly code: SecurityErrorCode; readonly message: string } | null {
   if (file.size === 0) return { code: 'INVALID_DOCUMENT', message: 'The selected file is empty.' }
   if (file.size > SECURITY_POLICY.maxInputBytes) {
@@ -89,227 +179,459 @@ function fileBadge(file: File): string {
   return 'EPUB'
 }
 
+function guessedFormat(file: File | undefined): DocumentFormat {
+  if (!file) return 'epub'
+  const badge = fileBadge(file)
+  return badge === 'PDF' ? 'pdf' : badge === 'FB2' ? 'fb2' : 'epub'
+}
+
+function inspectionFor(job: Job): DocumentInspection | null {
+  return job.status === 'inspecting' ? null : job.inspection
+}
+
+function triggerDownload(data: Uint8Array, filename: string, type = 'application/zip'): void {
+  const buffer = new ArrayBuffer(data.byteLength)
+  new Uint8Array(buffer).set(data)
+  const url = URL.createObjectURL(new Blob([buffer], { type }))
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  anchor.click()
+  globalThis.setTimeout(() => URL.revokeObjectURL(url), 1_000)
+}
+
+function jobStatusLabel(job: Job): string {
+  switch (job.status) {
+    case 'inspecting':
+      return 'Inspecting safely'
+    case 'ready':
+      return 'Ready'
+    case 'queued':
+      return 'Queued'
+    case 'running':
+      return job.progress.label
+    case 'success':
+      return 'Prepared'
+    case 'error':
+      return `Rejected · ${job.code}`
+  }
+}
+
 export function App() {
-  const [state, dispatch] = useReducer(reducer, initialState)
-  const controllerRef = useRef<AbortController | null>(null)
+  const [jobs, dispatch] = useReducer(jobsReducer, [])
+  const [dragging, setDragging] = useState(false)
+  const [profile, setProfile] = useState<OutputProfileId>('notebooklm')
+  const [ocrEnabled, setOcrEnabled] = useState(false)
+  const inspectionControllers = useRef(new Map<string, AbortController>())
+  const activeConversion = useRef<AbortController | null>(null)
+  const stopBatch = useRef(false)
 
-  const selectFile = (file: File | undefined): void => {
-    if (!file || state.kind === 'running') return
-    const error = selectError(file)
-    if (error) {
-      dispatch({ type: 'failure', file, code: error.code, message: error.message })
-      return
-    }
-    dispatch({ type: 'select', file })
-  }
+  const batchRunning = jobs.some((job) => job.status === 'queued' || job.status === 'running')
+  const readyJobs = jobs.filter((job): job is Extract<Job, { status: 'ready' }> => job.status === 'ready')
+  const successfulJobs = jobs.filter((job): job is Extract<Job, { status: 'success' }> => job.status === 'success')
+  const focusJob = jobs.find((job) => inspectionFor(job)) ?? jobs[0]
+  const focusInspection = focusJob ? inspectionFor(focusJob) : null
+  const focusFormat = focusInspection?.format ?? guessedFormat(focusJob?.file)
 
-  const startConversion = async (): Promise<void> => {
-    if (state.kind !== 'ready') return
-    const file = state.file
+  const inspectJob = async (job: Extract<Job, { status: 'inspecting' }>): Promise<void> => {
     const controller = new AbortController()
-    controllerRef.current = controller
-    dispatch({ type: 'start' })
-
+    inspectionControllers.current.set(job.id, controller)
     try {
-      const result = await runConversion(
-        file,
-        (progress) => dispatch({ type: 'progress', progress }),
-        controller.signal,
-      )
-      dispatch({ type: 'success', result })
+      const inspection = await runInspection(job.file, controller.signal)
+      dispatch({ type: 'inspected', id: job.id, inspection })
     } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') {
-        dispatch({ type: 'cancelled' })
-      } else {
-        const code = error instanceof WorkerConversionError ? error.code : 'CONVERSION_FAILED'
-        const message = error instanceof WorkerConversionError ? error.message : 'The file could not be converted safely.'
-        dispatch({ type: 'failure', file, code, message })
-      }
+      if (error instanceof DOMException && error.name === 'AbortError') return
+      const code = error instanceof WorkerConversionError ? error.code : 'CONVERSION_FAILED'
+      const message = error instanceof WorkerConversionError
+        ? error.message
+        : 'The file could not be inspected safely.'
+      dispatch({ type: 'failed', id: job.id, inspection: null, code, message })
     } finally {
-      if (controllerRef.current === controller) controllerRef.current = null
+      inspectionControllers.current.delete(job.id)
     }
   }
 
-  const cancelConversion = (): void => {
-    controllerRef.current?.abort()
+  const addFiles = async (fileList: FileList | readonly File[]): Promise<void> => {
+    const remaining = Math.max(0, SECURITY_POLICY.maxBatchFiles - jobs.length)
+    const files = Array.from(fileList).slice(0, remaining)
+    if (files.length === 0) return
+    const additions: Job[] = files.map((file) => {
+      const id = globalThis.crypto.randomUUID()
+      const error = selectError(file)
+      return error
+        ? {
+            id,
+            file,
+            status: 'error',
+            inspection: null,
+            code: error.code,
+            message: error.message,
+          }
+        : { id, file, status: 'inspecting' }
+    })
+    dispatch({ type: 'add', jobs: additions })
+    for (const job of additions) {
+      if (job.status === 'inspecting') await inspectJob(job)
+    }
   }
 
-  const retryRejectedFile = (): void => {
-    if (state.kind === 'error' && state.file) dispatch({ type: 'select', file: state.file })
+  const startBatch = async (): Promise<void> => {
+    if (batchRunning || readyJobs.length === 0) return
+    const snapshot = [...readyJobs]
+    dispatch({ type: 'queue', ids: new Set(snapshot.map((job) => job.id)) })
+    stopBatch.current = false
+    const options: ConversionOptions = {
+      profile,
+      ocr: {
+        enabled: ocrEnabled,
+        languages: ['eng', 'deu'],
+      },
+    }
+
+    for (const job of snapshot) {
+      if (stopBatch.current) break
+      dispatch({ type: 'run', id: job.id })
+      const controller = new AbortController()
+      activeConversion.current = controller
+      try {
+        const result = await runConversion(
+          job.file,
+          options,
+          (progress) => dispatch({ type: 'progress', id: job.id, progress }),
+          controller.signal,
+        )
+        dispatch({ type: 'complete', id: job.id, result })
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') {
+          dispatch({
+            type: 'failed',
+            id: job.id,
+            inspection: job.inspection,
+            code: 'CONVERSION_FAILED',
+            message: 'Preparation was cancelled. The original file was not changed.',
+          })
+        } else {
+          const code = error instanceof WorkerConversionError ? error.code : 'CONVERSION_FAILED'
+          const message = error instanceof WorkerConversionError
+            ? error.message
+            : 'The file could not be prepared safely.'
+          dispatch({
+            type: 'failed',
+            id: job.id,
+            inspection: job.inspection,
+            code,
+            message,
+          })
+        }
+      } finally {
+        if (activeConversion.current === controller) activeConversion.current = null
+      }
+    }
+    dispatch({ type: 'unqueue' })
   }
 
-  const downloadResult = (): void => {
-    if (state.kind !== 'success') return
-    const archiveBuffer = new ArrayBuffer(state.result.archive.byteLength)
-    new Uint8Array(archiveBuffer).set(state.result.archive)
-    const blob = new Blob([archiveBuffer], { type: 'application/zip' })
-    const url = URL.createObjectURL(blob)
-    const anchor = document.createElement('a')
-    anchor.href = url
-    anchor.download = state.result.filename
-    anchor.click()
-    globalThis.setTimeout(() => URL.revokeObjectURL(url), 1_000)
+  const cancelBatch = (): void => {
+    stopBatch.current = true
+    activeConversion.current?.abort()
+    dispatch({ type: 'unqueue' })
   }
 
-  const currentFile = state.kind === 'idle' ? null : state.file
+  const retryJob = (job: Extract<Job, { status: 'error' }>): void => {
+    dispatch({ type: 'retry', id: job.id })
+    if (!job.inspection) {
+      void inspectJob({ id: job.id, file: job.file, status: 'inspecting' })
+    }
+  }
+
+  const removeJob = (job: Job): void => {
+    inspectionControllers.current.get(job.id)?.abort()
+    dispatch({ type: 'remove', id: job.id })
+  }
+
+  const downloadAll = (): void => {
+    if (successfulJobs.length === 0) return
+    const files: Record<string, Uint8Array> = {}
+    for (const [index, job] of successfulJobs.entries()) {
+      const prefix = String(index + 1).padStart(2, '0')
+      files[`${prefix}-${job.result.filename}`] = job.result.archive
+    }
+    triggerDownload(
+      zipSync(files, { level: 0, mtime: new Date('2026-01-01T00:00:00Z') }),
+      'bookrefinery-prepared-books.zip',
+    )
+  }
 
   return (
     <div className="app-shell">
+      <a className="skip-link" href="#workspace">Skip to Private Workspace</a>
       <header className="topbar">
-        <a className="brand" href="#main" aria-label="Book2Markdown — skip to main content">
-          <span className="brand-mark"><ShieldIcon /></span>
-          <span>Book2<strong>Markdown</strong></span>
-        </a>
-        <div className="local-badge"><span />100% local</div>
+        <div className="brand-lockup">
+          <a className="brand" href="#main" aria-label="BookRefinery — go to the top">
+            <span className="brand-mark"><ShieldIcon /></span>
+            <span className="brand-name" translate="no">Book<strong>Refinery</strong></span>
+          </a>
+          <a
+            className="creator-link"
+            href="https://github.com/leshxt"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Visit leshxt on GitHub"
+          >
+            <GitHubIcon /><span>by <strong translate="no">leshxt</strong></span>
+          </a>
+        </div>
+        <div className="local-badge"><span aria-hidden="true" />100% local</div>
       </header>
 
       <main id="main">
         <section className="hero" aria-labelledby="hero-title">
-          <div className="eyebrow"><ShieldIcon /> EPUB, FB2 &amp; PDF · hardened local conversion</div>
-          <h1 id="hero-title">Ebooks in.<br /><span>Markdown out.</span></h1>
+          <div className="eyebrow"><ShieldIcon /> Local ebook refinery · EPUB, FB2 &amp; PDF</div>
+          <h1 id="hero-title">Books in.<br /><span>Safe knowledge out.</span></h1>
           <p className="hero-copy">
-            Convert EPUB, FB2 and PDF ebooks locally into clean Markdown. No uploads, no remote loading,
-            no active HTML — just your document in an isolated worker with strict safety limits.
+            Inspect, sanitize, OCR, and reshape ebooks into trustworthy multimodal sources for
+            NotebookLM, RAG systems, Markdown workflows, or long-term safe storage.
           </p>
-
-          <div className="trust-row" aria-label="Security features">
-            <span><i>01</i> Network blocked</span>
-            <span><i>02</i> Resource limits</span>
-            <span><i>03</i> Graphics preserved safely</span>
+          <div className="trust-row" aria-label="Product guarantees">
+            <span><i>01</i> Never uploaded</span>
+            <span><i>02</i> Text &amp; visuals synchronized</span>
+            <span><i>03</i> Exact outputs before processing</span>
           </div>
         </section>
 
-        <section className="studio-card" aria-label="Ebook conversion">
+        <section className="outcomes" aria-labelledby="outcomes-title">
+          <div className="outcomes-heading">
+            <p className="section-label">Refine, Don&apos;t Flatten</p>
+            <h2 id="outcomes-title">One source.<br />Purpose-built outputs.</h2>
+          </div>
+          <div className="outcome-grid">
+            <article>
+              <span>Inspect</span>
+              <h3>Preflight First</h3>
+              <p>Format, structure, text coverage, graphics, limits, and OCR needs are shown before processing.</p>
+            </article>
+            <article>
+              <span>Preserve</span>
+              <h3>Text + Visual Context</h3>
+              <p>Searchable text stays aligned with sanitized figures and page-faithful visual companions.</p>
+            </article>
+            <article>
+              <span>Prove</span>
+              <h3>Manifested Exports</h3>
+              <p>Every bundle includes security records and a SHA-256 inventory of the files it contains.</p>
+            </article>
+          </div>
+        </section>
+
+        <section className="studio-card" id="workspace" aria-labelledby="workspace-title">
           <div className="studio-heading">
             <div>
-              <p className="section-label">Local studio</p>
-              <h2>Choose an ebook</h2>
+              <p className="section-label">Private Workspace</p>
+              <h2 id="workspace-title">Prepare Your Sources</h2>
             </div>
-            <span className="limit-label">max. 80 MB</span>
+            <span className="limit-label">12 files · 80 MB each</span>
           </div>
 
+          <fieldset className="profile-picker" disabled={batchRunning}>
+            <legend>
+              <span className="step-number">01</span>
+              Choose an output profile
+              <small>Shown for {focusFormat.toUpperCase()} · every listed path is inside the downloaded ZIP.</small>
+            </legend>
+            <div className="profile-grid">
+              {OUTPUT_PROFILES.map((candidate) => {
+                const selected = profile === candidate.id
+                return (
+                  <label className={`profile-card ${selected ? 'is-selected' : ''}`} key={candidate.id}>
+                    <input
+                      type="radio"
+                      name="output-profile"
+                      value={candidate.id}
+                      checked={selected}
+                      onChange={() => setProfile(candidate.id)}
+                    />
+                    <span className="profile-check" aria-hidden="true">{selected ? '✓' : ''}</span>
+                    <strong>{candidate.name}</strong>
+                    <span className="profile-summary">{candidate.summary}</span>
+                    <ul className="output-file-list">
+                      {profileOutputFiles(candidate.id, focusFormat).map((file) => (
+                        <li key={file.path}>
+                          <code>{file.path}</code>
+                          <span>{file.format}{file.optional ? ' · if available' : ''}</span>
+                          <small>{file.description}</small>
+                        </li>
+                      ))}
+                    </ul>
+                  </label>
+                )
+              })}
+            </div>
+          </fieldset>
+
+          <div className="ocr-option">
+            <div>
+              <span className="step-number">02</span>
+              <strong>Recover text from scanned PDF pages</strong>
+              <p>Optional bundled English + German OCR. It fills the PDF/Markdown text layers; it does not create a disconnected duplicate file.</p>
+            </div>
+            <label className="switch">
+              <input
+                type="checkbox"
+                checked={ocrEnabled}
+                disabled={batchRunning}
+                onChange={(event) => setOcrEnabled(event.currentTarget.checked)}
+              />
+              <span aria-hidden="true" />
+              <b>{ocrEnabled ? 'On' : 'Off'}</b>
+            </label>
+          </div>
+
+          <div className="upload-heading">
+            <div><span className="step-number">03</span><strong>Add up to 12 ebooks</strong></div>
+            {jobs.length > 0 && <span>{jobs.length} / {SECURITY_POLICY.maxBatchFiles}</span>}
+          </div>
           <label
-            className={`dropzone ${state.dragging ? 'is-dragging' : ''} ${state.kind === 'running' ? 'is-disabled' : ''}`}
-            onDragEnter={(event) => { event.preventDefault(); dispatch({ type: 'drag', active: true }) }}
+            className={`dropzone compact-dropzone ${dragging ? 'is-dragging' : ''} ${jobs.length >= SECURITY_POLICY.maxBatchFiles ? 'is-disabled' : ''}`}
+            onDragEnter={(event) => { event.preventDefault(); setDragging(true) }}
             onDragOver={(event) => event.preventDefault()}
-            onDragLeave={(event) => { event.preventDefault(); dispatch({ type: 'drag', active: false }) }}
+            onDragLeave={(event) => { event.preventDefault(); setDragging(false) }}
             onDrop={(event) => {
               event.preventDefault()
-              dispatch({ type: 'drag', active: false })
-              selectFile(event.dataTransfer.files[0])
+              setDragging(false)
+              if (!batchRunning) void addFiles(event.dataTransfer.files)
             }}
           >
             <input
               type="file"
+              name="ebooks"
+              multiple
+              aria-label="Choose EPUB, FB2, compressed FB2, or PDF ebooks"
               accept=".epub,.fb2,.fb2.zip,.pdf,application/epub+zip,application/x-fictionbook+xml,application/pdf"
-              disabled={state.kind === 'running'}
+              disabled={batchRunning || jobs.length >= SECURITY_POLICY.maxBatchFiles}
               onChange={(event) => {
-                selectFile(event.currentTarget.files?.[0])
+                if (event.currentTarget.files) void addFiles(event.currentTarget.files)
                 event.currentTarget.value = ''
               }}
             />
             <span className="upload-orbit"><UploadIcon /></span>
-            <strong>{state.dragging ? 'Drop it here' : 'Drop an EPUB, FB2 or PDF here'}</strong>
-            <span>or click to choose an ebook</span>
+            <span>
+              <strong>{dragging ? 'Drop them here' : jobs.length ? 'Add more books' : 'Drop EPUB, FB2, or PDF files here'}</strong>
+              <small>or choose local files · each receives an isolated preflight</small>
+            </span>
           </label>
 
-          {currentFile && (
-            <div className="file-row">
-              <div className="file-icon">{fileBadge(currentFile)}</div>
-              <div className="file-details">
-                <strong>{currentFile.name}</strong>
-                <span>{formatBytes(currentFile.size)} · stays on this device</span>
+          {jobs.length > 0 && (
+            <div className="queue" aria-label="Preparation queue">
+              <div className="queue-heading">
+                <div>
+                  <span className="step-number">04</span>
+                  <strong>Review preflight and prepare</strong>
+                </div>
+                {successfulJobs.length > 0 && (
+                  <button className="text-button" type="button" onClick={() => dispatch({ type: 'clear-finished' })}>
+                    Clear finished
+                  </button>
+                )}
               </div>
-              {state.kind !== 'running' && (
-                <button className="text-button" type="button" onClick={() => dispatch({ type: 'reset' })}>Remove</button>
-              )}
+
+              {jobs.map((job) => {
+                const inspection = inspectionFor(job)
+                return (
+                  <article className={`job-card job-${job.status}`} key={job.id}>
+                    <div className="job-main">
+                      <div className="file-icon">{fileBadge(job.file)}</div>
+                      <div className="file-details">
+                        <strong>{job.file.name}</strong>
+                        <span>{formatBytes(job.file.size)} · {jobStatusLabel(job)}</span>
+                      </div>
+                      {job.status !== 'running' && job.status !== 'queued' && (
+                        <button className="icon-button" type="button" aria-label={`Remove ${job.file.name}`} onClick={() => removeJob(job)}>×</button>
+                      )}
+                    </div>
+
+                    {inspection && (
+                      <div className="preflight-grid">
+                        <div><span>Title</span><strong>{inspection.title}</strong></div>
+                        <div><span>{inspection.unitLabel}</span><strong>{inspection.units.toLocaleString('en-US')}</strong></div>
+                        <div><span>graphics / pages</span><strong>{inspection.graphics.toLocaleString('en-US')}</strong></div>
+                        <div><span>text layer</span><strong>{inspection.textCoverage}</strong></div>
+                      </div>
+                    )}
+
+                    {inspection?.ocrRecommended && !ocrEnabled && (
+                      <div className="inline-notice">
+                        This PDF appears partly image-only. Enable local OCR above to recover searchable text.
+                      </div>
+                    )}
+
+                    {job.status === 'running' && (
+                      <div className="job-progress">
+                        <div><span>{job.progress.label}</span><strong>{job.progress.percent}%</strong></div>
+                        <progress value={job.progress.percent} max={100}>{job.progress.percent}%</progress>
+                      </div>
+                    )}
+
+                    {job.status === 'error' && (
+                      <div className="job-error" role="alert">
+                        <p>{job.message}</p>
+                        <button type="button" onClick={() => retryJob(job)}>Try again</button>
+                      </div>
+                    )}
+
+                    {job.status === 'success' && (
+                      <div className="job-result">
+                        <div className="result-metrics">
+                          <span><strong>{job.result.summary.units.toLocaleString('en-US')}</strong>{job.result.summary.unitLabel}</span>
+                          <span><strong>{job.result.summary.ocrPages ?? 0}</strong>OCR pages</span>
+                          <span><strong>{formatBytes(job.result.summary.outputBytes)}</strong>ZIP</span>
+                        </div>
+                        <button type="button" onClick={() => triggerDownload(job.result.archive, job.result.filename)}>
+                          <DownloadIcon /> {job.result.filename}
+                        </button>
+                        {job.result.summary.warnings.length > 0 && (
+                          <details className="warnings">
+                            <summary>{job.result.summary.warnings.length} preparation warning(s)</summary>
+                            <ul>{job.result.summary.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>
+                          </details>
+                        )}
+                      </div>
+                    )}
+                  </article>
+                )
+              })}
+
+              <div className="queue-actions">
+                {batchRunning ? (
+                  <button className="secondary-button" type="button" onClick={cancelBatch}>Cancel batch</button>
+                ) : (
+                  <button className="primary-button" type="button" disabled={readyJobs.length === 0} onClick={() => void startBatch()}>
+                    <ShieldIcon /> Prepare {readyJobs.length || 'ready'} {readyJobs.length === 1 ? 'book' : 'books'} as {OUTPUT_PROFILES.find((item) => item.id === profile)?.name}
+                  </button>
+                )}
+                {successfulJobs.length > 1 && (
+                  <button className="secondary-button" type="button" onClick={downloadAll}>
+                    <DownloadIcon /> Download all prepared books
+                  </button>
+                )}
+              </div>
             </div>
           )}
-
-          <div className="status-region" aria-live="polite">
-            {state.kind === 'ready' && (
-              <button className="primary-button" type="button" onClick={() => void startConversion()}>
-                <ShieldIcon /> Convert safely
-              </button>
-            )}
-
-            {state.kind === 'running' && (
-              <div className="progress-panel">
-                <div className="progress-copy">
-                  <div><span className="spinner" /><strong>{state.progress.label}</strong></div>
-                  <span>{state.progress.percent} %</span>
-                </div>
-                <progress className="progress-track" value={state.progress.percent} max={100}>
-                  {state.progress.percent} %
-                </progress>
-                <button className="text-button" type="button" onClick={cancelConversion}>Cancel</button>
-              </div>
-            )}
-
-            {state.kind === 'error' && (
-              <div className="message error-message" role="alert">
-                <span>!</span>
-                <div><strong>File rejected · {state.code}</strong><p>{state.message}</p></div>
-                {state.file && <button type="button" onClick={retryRejectedFile}>Try again</button>}
-              </div>
-            )}
-
-            {state.kind === 'success' && (
-              <div className="result-panel">
-                <div className="result-title">
-                  <span className="success-mark"><ShieldIcon /></span>
-                  <div><p className="section-label">Safely exported</p><h3>{state.result.summary.title}</h3></div>
-                </div>
-                <div className="metrics">
-                  <div><strong>{state.result.summary.units}</strong><span>{state.result.summary.unitLabel}</span></div>
-                  <div><strong>{state.result.summary.assets}</strong><span>images</span></div>
-                  <div><strong>{formatBytes(state.result.summary.outputBytes)}</strong><span>export</span></div>
-                </div>
-                {state.result.summary.warnings.length > 0 && (
-                  <details className="warnings">
-                    <summary>{state.result.summary.warnings.length} conversion warning(s)</summary>
-                    <ul>{state.result.summary.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>
-                  </details>
-                )}
-                {(state.result.summary.format === 'epub' || state.result.summary.format === 'fb2') && (
-                  <div className="llm-ready-note">
-                    <strong>NotebookLM-ready visual ebook included</strong>
-                    <span>Start with <code>notebooklm/book.sanitized.epub</code>. It already contains the text and sanitized graphics in reading order; <code>book.md</code> is an optional text-only fallback.</span>
-                  </div>
-                )}
-                {state.result.summary.format === 'pdf' && state.result.summary.assets > 0 && (
-                  <div className="llm-ready-note">
-                    <strong>NotebookLM-ready searchable PDF included</strong>
-                    <span>Start with <code>notebooklm/document.sanitized.pdf</code>. It combines safe page visuals with real searchable text; <code>document.md</code> is an optional text-only fallback.</span>
-                  </div>
-                )}
-                <button className="primary-button" type="button" onClick={downloadResult}>
-                  <DownloadIcon /> Download conversion bundle
-                </button>
-                <details className="preview">
-                  <summary>Show text preview</summary>
-                  <pre>{state.result.preview}</pre>
-                </details>
-              </div>
-            )}
-          </div>
         </section>
 
         <section className="security-grid" aria-labelledby="security-title">
           <div className="security-intro">
-            <p className="section-label">Threat model</p>
+            <p className="section-label">Threat Model</p>
             <h2 id="security-title">Distrust is<br />a feature.</h2>
-            <p>Suspicious parts are removed or quarantined before active content can reach the interface.</p>
+            <p>Every book gets a disposable worker, strict resource budget, explicit output contract, and verifiable manifest.</p>
           </div>
-          <article><span>01</span><h3>Isolated worker</h3><p>Conversion runs away from the UI and is terminated after 120 seconds.</p></article>
-          <article><span>02</span><h3>Strict resource limits</h3><p>Paths, sizes, compression ratios, page counts, text volume, and runtime are bounded.</p></article>
-          <article><span>03</span><h3>Sanitized graphics</h3><p>Raster images are signature-checked; SVG scripts, events, remote sources, and active elements are stripped.</p></article>
+          <article><span>01</span><h3>Isolated jobs</h3><p>Preflight, conversion, and optional OCR stay outside the UI and can be terminated independently.</p></article>
+          <article><span>02</span><h3>Bounded resources</h3><p>Paths, archives, pages, pixels, OCR work, output size, and runtime all have hard limits.</p></article>
+          <article><span>03</span><h3>Passive outputs</h3><p>Scripts, forms, remote sources, attachments, and active markup never enter the prepared bundle.</p></article>
         </section>
       </main>
 
       <footer>
-        <span>Book2Markdown · Open Source · MIT</span>
-        <span>Processing happens entirely in your browser</span>
+        <span><span translate="no">BookRefinery</span> · <a href="https://github.com/leshxt/BookRefinery" target="_blank" rel="noopener noreferrer">Open Source</a> · MIT</span>
+        <span>Inspect, refine, and export entirely on this device</span>
       </footer>
     </div>
   )

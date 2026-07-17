@@ -7,13 +7,26 @@ function contentStream(lines: readonly string[]): string {
   return `BT /F1 12 Tf 72 720 Td ${commands} ET`
 }
 
-export function makePdf(pages: readonly (readonly string[])[] = [['Hallo PDF', 'Zweite Zeile']]): Uint8Array {
+export interface PdfFixtureOptions {
+  readonly outline?: readonly { readonly title: string; readonly page: number }[]
+}
+
+export function makePdf(
+  pages: readonly (readonly string[])[] = [['Hallo PDF', 'Zweite Zeile']],
+  options: PdfFixtureOptions = {},
+): Uint8Array {
   const pageObjectStart = 4
   const contentObjectStart = pageObjectStart + pages.length
-  const infoObject = contentObjectStart + pages.length
+  const outlineRootObject = contentObjectStart + pages.length
+  const outlineItemStart = outlineRootObject + 1
+  const outline = options.outline?.filter((item) => item.page >= 1 && item.page <= pages.length) ?? []
+  const infoObject = outline.length > 0
+    ? outlineItemStart + outline.length
+    : contentObjectStart + pages.length
   const pageRefs = pages.map((_, index) => `${pageObjectStart + index} 0 R`).join(' ')
+  const catalogOutline = outline.length > 0 ? ` /Outlines ${outlineRootObject} 0 R` : ''
   const objects: string[] = [
-    '<< /Type /Catalog /Pages 2 0 R >>',
+    `<< /Type /Catalog /Pages 2 0 R${catalogOutline} >>`,
     `<< /Type /Pages /Kids [${pageRefs}] /Count ${pages.length} >>`,
     '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
   ]
@@ -27,9 +40,21 @@ export function makePdf(pages: readonly (readonly string[])[] = [['Hallo PDF', '
     const stream = contentStream(page)
     objects.push(`<< /Length ${new TextEncoder().encode(stream).byteLength} >>\nstream\n${stream}\nendstream`)
   }
+  if (outline.length > 0) {
+    objects.push(
+      `<< /Type /Outlines /First ${outlineItemStart} 0 R /Last ${outlineItemStart + outline.length - 1} 0 R /Count ${outline.length} >>`,
+    )
+    for (const [index, item] of outline.entries()) {
+      const previous = index > 0 ? ` /Prev ${outlineItemStart + index - 1} 0 R` : ''
+      const next = index < outline.length - 1 ? ` /Next ${outlineItemStart + index + 1} 0 R` : ''
+      objects.push(
+        `<< /Title (${pdfString(item.title)}) /Parent ${outlineRootObject} 0 R /Dest [${pageObjectStart + item.page - 1} 0 R /Fit]${previous}${next} >>`,
+      )
+    }
+  }
   objects.push('<< /Title (Test PDF) /Author (Ada Beispiel) >>')
 
-  const header = '%PDF-1.4\n%Book2Markdown\n'
+  const header = '%PDF-1.4\n%BookRefinery\n'
   let body = header
   const offsets: number[] = []
   for (const [index, object] of objects.entries()) {

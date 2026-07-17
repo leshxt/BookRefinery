@@ -1,6 +1,7 @@
 import { strToU8, zipSync } from 'fflate'
 import { openSecureArchive } from './archive'
 import type { ConversionProgress, ConversionResult, ConversionSummary } from './convert'
+import type { DocumentInspection } from './contracts'
 import { SecurityError } from './errors'
 import { figureId, outputAssetName, outputAssetPath, rasterDescriptor } from './images'
 import {
@@ -177,6 +178,39 @@ function readMetadata(root: OrderedNode): Fb2Metadata {
     ...(authors.length ? { author: authors.join(', ').slice(0, 500) } : {}),
     ...(language ? { language } : {}),
     ...(coverReference ? { coverReference } : {}),
+  }
+}
+
+function descendantCount(node: OrderedNode, expected: string): number {
+  const own = tagIs(node, expected) ? 1 : 0
+  return own + nodeChildren(node).reduce((sum, child) => sum + descendantCount(child, expected), 0)
+}
+
+function inspectFb2Xml(
+  bytes: Uint8Array,
+  accounting: ConversionAccounting,
+): DocumentInspection {
+  const root = documentRoot(parseXmlOrderedSecure(bytes, 'FictionBook document', SECURITY_POLICY.maxFb2Bytes))
+  const metadata = readMetadata(root)
+  const chapters = Math.max(1, childNodes(root, 'body').reduce(
+    (sum, body) => sum + Math.max(1, childNodes(body, 'section').length),
+    0,
+  ))
+  const graphics = descendantCount(root, 'binary')
+
+  return {
+    format: 'fb2',
+    title: metadata.title,
+    ...(metadata.author ? { author: metadata.author } : {}),
+    ...(metadata.language ? { language: metadata.language } : {}),
+    units: chapters,
+    unitLabel: 'chapters',
+    graphics,
+    inputBytes: accounting.inputBytes,
+    processedBytes: accounting.processedBytes,
+    textCoverage: 'full',
+    ocrRecommended: false,
+    warnings: [],
   }
 }
 
@@ -543,7 +577,7 @@ function convertFb2Xml(
   onProgress({ percent: 100, label: 'Conversion complete' })
   return {
     archive,
-    filename: `${sourceStem(sourceName)}-markdown.zip`,
+    filename: `${sourceStem(sourceName)}-refined.zip`,
     summary: { ...provisionalSummary, outputBytes: archive.byteLength },
     preview: combined.slice(0, 8_000),
   }
@@ -573,4 +607,25 @@ export function convertFb2Zip(
     inputBytes: bytes.byteLength,
     processedBytes: archive.uncompressedBytes,
   }, onProgress)
+}
+
+export function inspectFb2(bytes: Uint8Array): DocumentInspection {
+  return inspectFb2Xml(bytes, {
+    inputBytes: bytes.byteLength,
+    processedBytes: bytes.byteLength,
+  })
+}
+
+export function inspectFb2Zip(bytes: Uint8Array): DocumentInspection {
+  const archive = openSecureArchive(bytes)
+  const candidates = [...archive.entries].filter(([path]) =>
+    path.toLocaleLowerCase('en-US').endsWith('.fb2'))
+  if (candidates.length !== 1) {
+    throw new SecurityError('INVALID_DOCUMENT', 'A compressed FB2 archive must contain exactly one .fb2 document.')
+  }
+  const [, document] = candidates[0]!
+  return inspectFb2Xml(document, {
+    inputBytes: bytes.byteLength,
+    processedBytes: archive.uncompressedBytes,
+  })
 }

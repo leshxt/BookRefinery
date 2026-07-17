@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## 0.4.0 - 2026-07-17
+
+- Renamed the project from Book2Markdown to BookRefinery across the app, package, generated
+  metadata, documentation, PWA, and repository links.
+- Added isolated preflight inspection and a sequential 12-file batch workflow.
+- Added NotebookLM, RAG, Readable Markdown, and Safe Archive profiles with exact output paths and
+  formats visible before processing.
+- Added profile-aware bundle filtering and deterministic SHA-256 `EXPORT-MANIFEST.json` records.
+- Added opt-in, fully bundled English/German OCR for image-only PDF pages with explicit page,
+  pixel, and runtime limits.
+- Improved PDF column order, heading detection, page chunks, outline sections, and adaptive visual
+  companion quality.
+- Added an installable complete-offline PWA and expanded hostile-input/profile regression coverage.
+- Repositioned the interface around local ebook sanitization and LLM preparation, added format-specific
+  output guidance, a graphical `by leshxt` GitHub credit, and clearer success metrics.
 - Added complete FictionBook 2 support for `.fb2` and single-document `.fb2.zip`, including sections,
   note bodies, cover art, embedded raster/SVG graphics, stable figure positions and the synchronized LLM package.
 - Added bounded whole-page PDF rendering and a rebuilt searchable `document.sanitized.pdf`: passive

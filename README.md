@@ -1,141 +1,142 @@
-# Book2Markdown
+# BookRefinery
 
-**Convert EPUB, FB2 and PDF ebooks to clean Markdown — locally, with untrusted input in mind.**
+**Safe ebook preparation for NotebookLM, RAG, Markdown, and long-term archives — local,
+multimodal, and built for untrusted input.**
 
-Book2Markdown is a browser-based converter with no backend and no upload. The document
-stays on the device, parsing runs in a disposable worker, and the production build cannot
-make network connections.
+BookRefinery is an installable browser app by [`leshxt`](https://github.com/leshxt). It inspects,
+sanitizes, optionally OCRs, and restructures EPUB, FictionBook 2, and PDF ebooks without uploading
+them. Searchable text remains connected to essential graphics and page visuals; scripts, remote
+resources, forms, attachments, and active markup do not enter the prepared output.
 
-![Book2Markdown local conversion interface](docs/assets/book2markdown-ui.png)
+![BookRefinery private ebook preparation workspace](docs/assets/bookrefinery-ui.png)
 
-## Supported formats
+## What it prepares
 
-| Input | Output | Notes |
+| Input | Preserved output | Structure |
 |---|---|---|
-| EPUB 2/3 | General Markdown bundle plus synchronized LLM package | Preserves signature-checked raster images and allowlist-sanitized SVG at their reading positions |
-| FictionBook 2 (`.fb2`, `.fb2.zip`) | Same synchronized book package as EPUB | Preserves sections, notes, cover art and embedded signature-checked or sanitized images at their reading positions |
-| PDF | Searchable sanitized PDF and page-separated Markdown | Re-renders whole pages for visual fidelity, then adds locally extracted Unicode text as a passive searchable layer |
+| EPUB 2/3 | Passive sanitized EPUB, Markdown, verified raster images, allowlist-sanitized SVG | Reading order, chapters, metadata, stable `FIG-xxxx` references |
+| FictionBook 2 (`.fb2`, `.fb2.zip`) | The same multimodal book contract as EPUB | Sections, notes, cover art, embedded graphics |
+| PDF | Page-faithful sanitized PDF, rebuilt searchable text layer, Markdown | Stable `PAGE-xxxx` files, detected headings and columns, optional outline sections |
 
-Scanned PDF pages remain visible in the sanitized companion, but they need OCR before they can
-produce Markdown text. PDF is a layout format, so complex columns, tables and reading order may
-still require manual Markdown cleanup.
+Preflight runs in a disposable worker before conversion. It reports format, title, page or chapter
+count, graphics, text coverage, decompressed size, warnings, and whether local OCR is recommended.
+Up to 12 books can then be processed sequentially, each with independent limits and cancellation.
+
+## Output profiles
+
+The app shows these paths and file formats directly in the profile selector before processing.
+
+### NotebookLM
+
+- EPUB/FB2: `notebooklm/book.sanitized.epub`, optional `notebooklm/book.md`, import guidance,
+  figure index, sanitized image fallbacks, security report, and JSON manifest.
+- PDF: `notebooklm/document.sanitized.pdf`, optional `notebooklm/document.md`, import guidance,
+  security report, and JSON manifest.
+
+The sanitized EPUB or PDF is the primary one-source import. The Markdown file is a fallback, not a
+second default upload, which avoids duplicate passages and competing citations.
+
+### RAG / Knowledge Base
+
+- `book.md` or `document.md`
+- `chapters/*.md` or `pages/PAGE-*.md`
+- the page-faithful searchable `notebooklm/document.sanitized.pdf` for PDF visual grounding
+- PDF `sections/*.md` and `OUTLINE.md` when a usable outline exists
+- sanitized `assets/*` plus the figure index for EPUB/FB2
+- LLM-safety report, security report, and `EXPORT-MANIFEST.json`
+
+### Readable Markdown
+
+- one canonical `book.md` or `document.md`
+- contextual sanitized graphics for EPUB/FB2
+- the page-faithful searchable PDF companion for PDF visual grounding
+- security report and checksum manifest
+
+### Safe Archive
+
+Every sanitized representation above in one reproducible ZIP.
+
+`EXPORT-MANIFEST.json` inventories every selected output file with media type, byte size, and
+SHA-256 checksum.
+
+## Local OCR
+
+OCR is opt-in and only runs on PDF pages without an extractable text layer. English and German
+language data, the Tesseract WebAssembly runtime, and its worker are bundled with the application;
+no model or language file is downloaded from a CDN. OCR text is written back into the normal
+Markdown and searchable-PDF layers, so it does not become a disconnected duplicate source.
+
+OCR is bounded to 30 pages, 90 million pixels, 4.5 million pixels per page, and a separate extended
+worker timeout. Recognition is probabilistic: verify important passages against the preserved page
+image.
 
 ## Start the app
 
 Install [Node.js 24](https://nodejs.org/) and run:
 
 ```powershell
-git clone https://github.com/leshxt/Book2Markdown.git
-cd Book2Markdown
+git clone https://github.com/leshxt/BookRefinery.git
+cd BookRefinery
 npm install
 npm run dev
 ```
 
 Open the local URL printed by Vite, normally `http://localhost:5173`.
 
-For a production-like run:
+For the installable production version:
 
 ```powershell
 npm run build
 npm run preview
 ```
 
-The static build is written to `dist/`. Keep the generated Content Security Policy intact
-when hosting it.
-
-## What the export contains
-
-EPUB and FB2 exports contain:
-
-- `book.md` with the complete book and stable `FIG-xxxx` markers at the original image positions;
-- one Markdown file per text or visual spine item under `chapters/`;
-- signature-checked PNG, JPEG, GIF and WebP assets under `assets/`, named with matching figure IDs;
-- sanitized standalone and inline SVG assets, including safe local raster references;
-- a synchronized multimodal package under `notebooklm/`;
-- `SECURITY-REPORT.md` with enforced limits and removed content.
-
-PDF exports contain `notebooklm/document.sanitized.pdf`, matching `PAGE-xxxx` sections in
-`document.md`, import guidance and the security report. The sanitized PDF is a new sandwich-style
-document: each locally rendered JPEG page preserves all visible text, images, vectors, tables and
-layout, while a non-rendering Unicode text layer makes the source text searchable and extractable.
-Original links, forms, file attachments, annotations, scripts and PDF object structures are not copied.
-
-## NotebookLM and multimodal LLMs
-
-For NotebookLM, start with **`notebooklm/book.sanitized.epub` only**. It is the primary source and
-already contains the complete text plus the actual sanitized graphics at matching `FIG-xxxx`
-positions without copying the source ebook's scripts, forms, remote resources or original markup.
-Using one source avoids duplicate passages and competing citations.
-
-`notebooklm/book.md` is an optional text-only fallback. Add it only when EPUB text retrieval or
-citations are incomplete, or when another target tool does not accept EPUB. It provides normalized
-heading levels, metadata, a table of contents, retained cross-chapter references and figure markers.
-Do not select both sources by default.
-
-`FIGURE-INDEX.md` maps every graphic to its chapter, caption or alt text, nearby text and safe
-asset. Graphics present in the EPUB or FB2 package but absent from the readable body are retained in a
-clearly labeled appendix instead of disappearing silently. Declared EPUB navigation documents are
-excluded from the canonical LLM text to avoid duplicate table-of-contents boilerplate; arbitrary
-copyright or front-matter content is not heuristically deleted.
-
-NotebookLM officially accepts Markdown, EPUB and several standalone raster image formats. If it
-fails to inspect an embedded raster figure, add the matching PNG, JPEG, GIF or WebP file from
-`assets/` as a separate image source. Standalone SVG is not listed as supported, so sanitized SVG
-remains available through the companion EPUB. Do not also upload `chapters/` unless duplicate text
-is intentional. Alt text and captions improve retrieval but do not replace inspection of the
-actual pixels.
-
-For PDF, start with **`notebooklm/document.sanitized.pdf` only**. Every source page is safely rendered
-for photographs, diagrams, vector art, tables and exact placement, then paired with a rebuilt Unicode
-text layer from that page. The PDF therefore remains visually faithful and machine-readable without
-copying the source's active object graph. `PAGE-0001` in `document.md` maps to page 1 in the sanitized
-PDF. Add `document.md` only as a text-only fallback; using both by default can duplicate passages and citations.
-
-`LLM-SAFETY-REPORT.md` flags a small set of common instruction-like patterns. It never deletes the
-book passage: legitimate fiction, security writing or quoted prompts must remain intact.
+Open the preview URL, then use the browser's **Install BookRefinery** action. The production build
+generates a versioned service worker that precaches the complete app, PDF runtime, OCR worker,
+WebAssembly core, and English/German language data for subsequent offline use.
 
 ## Security model
 
-Book2Markdown treats every input as hostile:
+BookRefinery treats every input as hostile:
 
-- all parsing happens in a dedicated worker with a 120-second watchdog;
-- the production CSP includes `connect-src 'none'`;
-- ZIP paths, entry counts, sizes and compression ratios are checked before EPUB or compressed-FB2 extraction;
-- XML entities and internal DTD subsets are rejected; inert legacy XHTML doctypes are stripped;
-- FB2 uses an XML-encoding allowlist, bounded Base64 decoding and the same raster/SVG image checks as EPUB;
-- PDF.js receives local bytes only, with fetching, XFA, system fonts, browser image decoders and WASM disabled;
-- PDF annotations are disabled during page rendering, and a new PDF is built only from bounded JPEG page images plus locally extracted passive Unicode text;
-- untrusted HTML or Markdown is never rendered in the application;
-- SVG scripts, event handlers, remote or embedded sources, active elements and unsafe styles are removed;
-- the visual companion EPUB is rebuilt from passive generated XHTML and already-sanitized assets,
-  rather than copying source HTML;
-- only passive Markdown/XHTML, signature-checked raster files and allowlist-sanitized SVG leave the converter.
+- preflight and conversion run in disposable workers;
+- ordinary conversion has a 120-second watchdog; opt-in OCR has a separate bounded timeout;
+- every batch item receives independent path, archive, page, pixel, text, and output limits;
+- ZIP paths, entry counts, sizes, compression ratios, XML entities, and DTDs are checked;
+- PDF.js receives local bytes only; fetching, XFA, browser decoders, system fonts, and annotations
+  are disabled;
+- PDF output is rebuilt from bounded local page renderings and passive Unicode text, never copied
+  from the original object graph;
+- raster images are signature-checked and SVG is allowlist-sanitized;
+- untrusted book HTML or Markdown is never rendered in the application;
+- the production document CSP blocks connections and active embedding;
+- every result contains security records and a SHA-256 output inventory.
 
 See [SECURITY.md](SECURITY.md) for the threat model and
-[docs/SECURITY-HARDENING.md](docs/SECURITY-HARDENING.md) for the changes compared with the
-original project. Future format and OCR ideas are tracked in [docs/ROADMAP.md](docs/ROADMAP.md).
-
-“Hardened” is not an absolute security guarantee. Keep the browser updated; use a disposable
-browser profile or virtual machine for exceptionally hostile material.
+[docs/SECURITY-HARDENING.md](docs/SECURITY-HARDENING.md) for the upstream comparison.
+“Hardened” is not an absolute guarantee; use a current browser and a disposable browser profile or
+virtual machine for exceptionally hostile material.
 
 ## Development
 
 ```powershell
 npm ci
-npm run test
-npm run build
-npm run audit
+npm run verify
 ```
 
-`npm run verify` runs all gates. CI uses SHA-pinned GitHub Actions, and Dependabot checks npm
-and workflow dependencies weekly.
+`npm run verify` runs the unit/integration corpus, TypeScript build, production PWA build, and
+high-severity production dependency audit. The test corpus includes deterministic malformed binary
+inputs, archive traversal, XML entities, prompt-injection-like book passages, profile contracts,
+manifest checksums, PDF text extraction, Unicode searchable PDFs, and layout heuristics.
 
 ## Project history
 
-Book2Markdown is an independent rewrite inspired by
-[`uxiew/epub2MD`](https://github.com/uxiew/epub2MD). The original MIT notice is preserved in
-[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). PDF parsing/rendering is powered by Mozilla
-PDF.js under Apache-2.0; passive PDF rebuilding uses pdf-lib under MIT.
+BookRefinery is an independent rewrite inspired by
+[`uxiew/epub2MD`](https://github.com/uxiew/epub2MD). It was previously named Book2Markdown; the
+broader name reflects that Markdown is now only one of several safe outputs. The original MIT notice
+is preserved in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+PDF parsing/rendering uses Mozilla PDF.js, passive PDF rebuilding uses pdf-lib, and optional local
+OCR uses Tesseract.js with bundled English and German language data.
 
 ## License
 

@@ -41,7 +41,7 @@ function createToUnicodeCMap(characters: readonly string[]): string {
 12 dict begin
 begincmap
 /CIDSystemInfo << /Registry (Adobe) /Ordering (UCS) /Supplement 0 >> def
-/CMapName /Book2MarkdownSearch def
+/CMapName /BookRefinerySearch def
 /CMapType 2 def
 1 begincodespacerange
 <0000> <FFFF>
@@ -74,7 +74,7 @@ function addSearchableTextLayer(page: PDFPage, text: string): void {
   const toUnicodeRef = context.register(context.flateStream(createToUnicodeCMap(characters)))
   const fontDescriptorRef = context.register(context.obj({
     Type: 'FontDescriptor',
-    FontName: 'Book2MarkdownSearch',
+    FontName: 'BookRefinerySearch',
     Flags: 4,
     FontBBox: [0, 0, 1000, 1000],
     ItalicAngle: 0,
@@ -91,7 +91,7 @@ function addSearchableTextLayer(page: PDFPage, text: string): void {
   const descendantFontRef = context.register(context.obj({
     Type: 'Font',
     Subtype: 'CIDFontType2',
-    BaseFont: 'Book2MarkdownSearch',
+    BaseFont: 'BookRefinerySearch',
     CIDSystemInfo: cidSystemInfo,
     FontDescriptor: fontDescriptorRef,
     DW: 1000,
@@ -99,7 +99,7 @@ function addSearchableTextLayer(page: PDFPage, text: string): void {
   const searchFontRef = context.register(context.obj({
     Type: 'Font',
     Subtype: 'Type0',
-    BaseFont: 'Book2MarkdownSearch',
+    BaseFont: 'BookRefinerySearch',
     Encoding: 'Identity-H',
     DescendantFonts: [descendantFontRef],
     ToUnicode: toUnicodeRef,
@@ -127,8 +127,8 @@ export class SearchablePdfBuilder {
     const document = await PDFDocument.create({ updateMetadata: false })
     document.setTitle(metadata.title, { showInWindowTitleBar: true })
     if (metadata.author) document.setAuthor(metadata.author)
-    document.setCreator('Book2Markdown')
-    document.setProducer('Book2Markdown passive searchable PDF builder')
+    document.setCreator('BookRefinery')
+    document.setProducer('BookRefinery passive searchable PDF builder')
     document.setCreationDate(FIXED_DATE)
     document.setModificationDate(FIXED_DATE)
     return new SearchablePdfBuilder(document)

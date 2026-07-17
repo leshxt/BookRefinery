@@ -1,36 +1,37 @@
 # Roadmap
 
-Book2Markdown aims to become a focused, local ebook-to-Markdown converter without weakening
-its privacy and hostile-input boundaries.
+BookRefinery is a local ebook-inspection, sanitization, OCR, and LLM-preparation studio. Markdown is
+one portable output, not the product boundary.
 
-## Current: unreleased
+## 0.4 — Refinery workflow
 
-- Hardened EPUB 2/3 conversion
-- Signature-checked raster graphics and allowlist-sanitized SVG, including visual spine items
-- Text-based PDF conversion
-- Searchable sanitized PDF companion with stable page IDs and a rebuilt Unicode text layer
-- Plain and compressed FictionBook 2 conversion with the same multimodal image contract as EPUB
-- Chapter/page separation and security report
+- [x] Isolated preflight with format, metadata, structure, text coverage, graphics, and warnings
+- [x] Four output profiles with exact paths and file formats visible before processing
+- [x] Batch queue for up to 12 books with independent workers, limits, progress, and cancellation
+- [x] Persistent per-item results, add-more flow, individual downloads, and combined download
+- [x] Opt-in bundled English/German OCR for scanned PDF pages with page and pixel budgets
+- [x] Improved PDF line grouping, column reading order, de-hyphenation, and heading heuristics
+- [x] Stable PDF page files plus outline-derived section files and outline index
+- [x] Adaptive sanitized-PDF render scale and JPEG quality under a global pixel budget
+- [x] Installable production PWA with a versioned complete offline cache
+- [x] Deterministic adversarial corpus, fuzz rejection, profile tests, and SHA-256 export manifests
+
+## Existing foundations
+
+- Hardened EPUB 2/3 and FictionBook 2 conversion
+- Signature-checked raster graphics and allowlist-sanitized SVG
+- Searchable sanitized PDF companion with rebuilt Unicode text
+- Synchronized Markdown and visual ebook packages with stable figure/page identifiers
+- Navigation de-duplication and instruction-like-content reporting
 - Local browser UI with no backend
-- Synchronized Markdown + sanitized visual EPUB package with stable figure IDs for multimodal notebooks
-- Normalized LLM hierarchy, figure index, navigation de-duplication and instruction-like-content report
 
-## Candidates for the next releases
+## Future investigations
 
-- Better PDF paragraph, column and heading heuristics
-- Optional chapter splitting based on PDF outlines
-- Batch conversion with independent limits per document
-- Reproducible downloadable desktop packaging
-- More adversarial corpus and fuzz testing
-- Better adaptive quality and performance for very large sanitized PDF companions
-- Optional fully local OCR for text inside EPUB figures, provided language data and resource use can remain bounded
-- Optional local visual descriptions for diagrams after a privacy-preserving model and threat review
+- Additional bundled OCR languages without making the default install excessively large
+- Optional local visual descriptions after a privacy, model-size, and hallucination review
+- More advanced PDF table reconstruction without inventing structure
+- Reproducible signed native wrappers once there is a release-signing process
+- Additional open ebook formats whose parsers can meet the same hostile-input boundary
 
-## Investigations
-
-- Opt-in, fully local OCR for scanned PDFs in a second disposable worker
-- Additional open ebook formats where parsing can remain local and dependency risk stays small
-- A safe plugin boundary for custom Markdown cleanup rules
-
-OCR and new formats will not ship merely as UI toggles. Each requires a threat model, size and
-time limits, dependency review and hostile-input regression tests.
+New formats and models require a threat model, explicit limits, dependency review, offline
+packaging, and hostile-input regression tests before they become selectable.

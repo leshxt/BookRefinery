@@ -14,11 +14,12 @@ const CONTENT_SECURITY_POLICY = [
   "form-action 'none'",
   "frame-src 'none'",
   "worker-src 'self' blob:",
+  "manifest-src 'self'",
 ].join('; ')
 
 function productionCsp(): Plugin {
   return {
-    name: 'book2markdown-csp',
+    name: 'bookrefinery-csp',
     apply: 'build',
     transformIndexHtml: {
       order: 'post',
@@ -32,7 +33,7 @@ function productionCsp(): Plugin {
 
 function thirdPartyLicenses(): Plugin {
   return {
-    name: 'book2markdown-third-party-licenses',
+    name: 'bookrefinery-third-party-licenses',
     apply: 'build',
     generateBundle() {
       this.emitFile({
@@ -54,6 +55,21 @@ function thirdPartyLicenses(): Plugin {
         type: 'asset',
         fileName: 'THIRD_PARTY_LICENSES/pdf-lib-LICENSE.md',
         source: readFileSync(new URL('./THIRD_PARTY_LICENSES/pdf-lib-LICENSE.md', import.meta.url), 'utf8'),
+      })
+      this.emitFile({
+        type: 'asset',
+        fileName: 'THIRD_PARTY_LICENSES/Tesseract.js-LICENSE.md',
+        source: readFileSync(new URL('./node_modules/tesseract.js/LICENSE.md', import.meta.url), 'utf8'),
+      })
+      this.emitFile({
+        type: 'asset',
+        fileName: 'THIRD_PARTY_LICENSES/tesseract.js-core-LICENSE.txt',
+        source: readFileSync(new URL('./node_modules/tesseract.js-core/LICENSE', import.meta.url), 'utf8'),
+      })
+      this.emitFile({
+        type: 'asset',
+        fileName: 'THIRD_PARTY_LICENSES/tesseract.js-data-LICENSE.txt',
+        source: readFileSync(new URL('./THIRD_PARTY_LICENSES/tesseract.js-data-LICENSE.txt', import.meta.url), 'utf8'),
       })
     },
   }
