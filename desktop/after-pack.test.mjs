@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import test from 'node:test'
 import { resolveElectronExecutablePath } from './after-pack.mjs'
@@ -39,4 +40,10 @@ test('rejects a Linux package without a concrete executable name', () => {
     }, 'linux'),
     /Linux executable name/u,
   )
+})
+
+test('provides public maintainer metadata for Debian packages', () => {
+  const packageJson = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+  assert.equal(packageJson.author.name, 'leshxt')
+  assert.match(packageJson.author.email, /@users\.noreply\.github\.com$/u)
 })
