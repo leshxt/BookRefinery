@@ -1,10 +1,12 @@
 # Book2Markdown
 
-**Convert EPUB, FB2 and PDF ebooks to clean Markdown — locally, with untrusted input in mind.**
+**Safe ebook preparation for NotebookLM and other LLMs — local, multimodal, and built for untrusted input.**
 
-Book2Markdown is a browser-based converter with no backend and no upload. The document
-stays on the device, parsing runs in a disposable worker, and the production build cannot
-make network connections.
+Book2Markdown is a browser-based EPUB, FB2 and PDF sanitizer by
+[`leshxt`](https://github.com/leshxt). It rebuilds ebooks as structured source packages with
+searchable text, preserved graphics, stable reading-position references and optional Markdown.
+There is no backend or upload: the document stays on the device, parsing runs in a disposable
+worker, and the production build cannot make network connections.
 
 ![Book2Markdown local conversion interface](docs/assets/book2markdown-ui.png)
 
@@ -15,6 +17,9 @@ make network connections.
 | EPUB 2/3 | General Markdown bundle plus synchronized LLM package | Preserves signature-checked raster images and allowlist-sanitized SVG at their reading positions |
 | FictionBook 2 (`.fb2`, `.fb2.zip`) | Same synchronized book package as EPUB | Preserves sections, notes, cover art and embedded signature-checked or sanitized images at their reading positions |
 | PDF | Searchable sanitized PDF and page-separated Markdown | Re-renders whole pages for visual fidelity, then adds locally extracted Unicode text as a passive searchable layer |
+
+Every format also receives import guidance for NotebookLM and similar multimodal LLMs, plus a
+security report describing enforced limits, removed active content and conversion warnings.
 
 Scanned PDF pages remain visible in the sanitized companion, but they need OCR before they can
 produce Markdown text. PDF is a layout format, so complex columns, tables and reading order may

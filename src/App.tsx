@@ -74,6 +74,14 @@ function DownloadIcon(props: SVGProps<SVGSVGElement>) {
   )
 }
 
+function GitHubIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" {...props}>
+      <path fill="currentColor" d="M12 2.25a9.75 9.75 0 0 0-3.08 19c.49.09.67-.21.67-.47v-1.9c-2.73.59-3.31-1.16-3.31-1.16-.45-1.13-1.09-1.43-1.09-1.43-.89-.61.07-.6.07-.6.98.07 1.5 1.01 1.5 1.01.87 1.5 2.29 1.06 2.85.81.09-.63.34-1.06.62-1.3-2.18-.25-4.47-1.09-4.47-4.82 0-1.06.38-1.93 1.01-2.61-.1-.25-.44-1.24.1-2.58 0 0 .82-.26 2.68 1a9.29 9.29 0 0 1 4.88 0c1.86-1.26 2.68-1 2.68-1 .54 1.34.2 2.33.1 2.58.63.68 1.01 1.55 1.01 2.61 0 3.74-2.3 4.57-4.48 4.81.35.31.66.91.66 1.84v2.7c0 .26.18.57.67.47A9.75 9.75 0 0 0 12 2.25Z" />
+    </svg>
+  )
+}
+
 function selectError(file: File): { readonly code: SecurityErrorCode; readonly message: string } | null {
   if (file.size === 0) return { code: 'INVALID_DOCUMENT', message: 'The selected file is empty.' }
   if (file.size > SECURITY_POLICY.maxInputBytes) {
@@ -152,38 +160,83 @@ export function App() {
   }
 
   const currentFile = state.kind === 'idle' ? null : state.file
+  const resultMetrics = state.kind === 'success'
+    ? [
+        { label: state.result.summary.unitLabel, value: state.result.summary.units.toLocaleString('en-US') },
+        state.result.summary.format === 'pdf'
+          ? { label: 'searchable text', value: formatBytes(state.result.summary.processedBytes) }
+          : { label: 'graphics', value: state.result.summary.assets.toLocaleString('en-US') },
+        { label: 'export', value: formatBytes(state.result.summary.outputBytes) },
+      ]
+    : []
 
   return (
     <div className="app-shell">
+      <a className="skip-link" href="#main">Skip to Main Content</a>
       <header className="topbar">
-        <a className="brand" href="#main" aria-label="Book2Markdown — skip to main content">
-          <span className="brand-mark"><ShieldIcon /></span>
-          <span>Book2<strong>Markdown</strong></span>
-        </a>
-        <div className="local-badge"><span />100% local</div>
+        <div className="brand-lockup">
+          <a className="brand" href="#main" aria-label="Book2Markdown — go to the converter">
+            <span className="brand-mark"><ShieldIcon /></span>
+            <span className="brand-name" translate="no">Book2<strong>Markdown</strong></span>
+          </a>
+          <a
+            className="creator-link"
+            href="https://github.com/leshxt"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Visit leshxt on GitHub"
+          >
+            <GitHubIcon /><span>by <strong translate="no">leshxt</strong></span>
+          </a>
+        </div>
+        <div className="local-badge"><span aria-hidden="true" />100% local</div>
       </header>
 
       <main id="main">
         <section className="hero" aria-labelledby="hero-title">
-          <div className="eyebrow"><ShieldIcon /> EPUB, FB2 &amp; PDF · hardened local conversion</div>
-          <h1 id="hero-title">Ebooks in.<br /><span>Markdown out.</span></h1>
+          <div className="eyebrow"><ShieldIcon /> Local ebook sanitizer · EPUB, FB2 &amp; PDF</div>
+          <h1 id="hero-title">Books in.<br /><span>Safe sources out.</span></h1>
           <p className="hero-copy">
-            Convert EPUB, FB2 and PDF ebooks locally into clean Markdown. No uploads, no remote loading,
-            no active HTML — just your document in an isolated worker with strict safety limits.
+            Sanitize ebooks locally into structured, multimodal source packages for NotebookLM and other
+            LLMs. Text stays searchable, essential graphics stay in context, and active content stays out.
           </p>
 
-          <div className="trust-row" aria-label="Security features">
-            <span><i>01</i> Network blocked</span>
-            <span><i>02</i> Resource limits</span>
-            <span><i>03</i> Graphics preserved safely</span>
+          <div className="trust-row" aria-label="Product guarantees">
+            <span><i>01</i> Never uploaded</span>
+            <span><i>02</i> Text &amp; visuals synchronized</span>
+            <span><i>03</i> LLM-ready exports</span>
           </div>
         </section>
 
-        <section className="studio-card" aria-label="Ebook conversion">
+        <section className="outcomes" aria-labelledby="outcomes-title">
+          <div className="outcomes-heading">
+            <p className="section-label">What You Get</p>
+            <h2 id="outcomes-title">One local workflow.<br />Three useful outputs.</h2>
+          </div>
+          <div className="outcome-grid">
+            <article>
+              <span>EPUB / FB2</span>
+              <h3>Sanitized Visual Ebook</h3>
+              <p>Rebuilt reading order with verified raster graphics, cleaned SVG, and stable figure positions.</p>
+            </article>
+            <article>
+              <span>PDF</span>
+              <h3>Searchable Sanitized PDF</h3>
+              <p>Page-faithful visuals plus rebuilt Unicode text, without source scripts, forms, or attachments.</p>
+            </article>
+            <article>
+              <span>LLM Prep</span>
+              <h3>Structured Context</h3>
+              <p>NotebookLM guidance, optional Markdown, stable FIG/PAGE references, and a security report.</p>
+            </article>
+          </div>
+        </section>
+
+        <section className="studio-card" aria-label="Ebook preparation">
           <div className="studio-heading">
             <div>
-              <p className="section-label">Local studio</p>
-              <h2>Choose an ebook</h2>
+              <p className="section-label">Private Workspace</p>
+              <h2>Prepare an Ebook</h2>
             </div>
             <span className="limit-label">max. 80 MB</span>
           </div>
@@ -201,6 +254,8 @@ export function App() {
           >
             <input
               type="file"
+              name="ebook"
+              aria-label="Choose an EPUB, FB2, compressed FB2, or PDF ebook"
               accept=".epub,.fb2,.fb2.zip,.pdf,application/epub+zip,application/x-fictionbook+xml,application/pdf"
               disabled={state.kind === 'running'}
               onChange={(event) => {
@@ -210,7 +265,7 @@ export function App() {
             />
             <span className="upload-orbit"><UploadIcon /></span>
             <strong>{state.dragging ? 'Drop it here' : 'Drop an EPUB, FB2 or PDF here'}</strong>
-            <span>or click to choose an ebook</span>
+            <span>or choose a local file</span>
           </label>
 
           {currentFile && (
@@ -229,7 +284,7 @@ export function App() {
           <div className="status-region" aria-live="polite">
             {state.kind === 'ready' && (
               <button className="primary-button" type="button" onClick={() => void startConversion()}>
-                <ShieldIcon /> Convert safely
+                <ShieldIcon /> Prepare Safe Sources
               </button>
             )}
 
@@ -258,12 +313,12 @@ export function App() {
               <div className="result-panel">
                 <div className="result-title">
                   <span className="success-mark"><ShieldIcon /></span>
-                  <div><p className="section-label">Safely exported</p><h3>{state.result.summary.title}</h3></div>
+                  <div><p className="section-label">Safely Prepared</p><h3>{state.result.summary.title}</h3></div>
                 </div>
                 <div className="metrics">
-                  <div><strong>{state.result.summary.units}</strong><span>{state.result.summary.unitLabel}</span></div>
-                  <div><strong>{state.result.summary.assets}</strong><span>images</span></div>
-                  <div><strong>{formatBytes(state.result.summary.outputBytes)}</strong><span>export</span></div>
+                  {resultMetrics.map((metric) => (
+                    <div key={metric.label}><strong>{metric.value}</strong><span>{metric.label}</span></div>
+                  ))}
                 </div>
                 {state.result.summary.warnings.length > 0 && (
                   <details className="warnings">
@@ -284,7 +339,7 @@ export function App() {
                   </div>
                 )}
                 <button className="primary-button" type="button" onClick={downloadResult}>
-                  <DownloadIcon /> Download conversion bundle
+                  <DownloadIcon /> Download Prepared Bundle
                 </button>
                 <details className="preview">
                   <summary>Show text preview</summary>
@@ -308,7 +363,7 @@ export function App() {
       </main>
 
       <footer>
-        <span>Book2Markdown · Open Source · MIT</span>
+        <span><span translate="no">Book2Markdown</span> · <a href="https://github.com/leshxt/Book2Markdown" target="_blank" rel="noopener noreferrer">Open Source</a> · MIT</span>
         <span>Processing happens entirely in your browser</span>
       </footer>
     </div>

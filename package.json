@@ -2,7 +2,7 @@
   "name": "book2markdown",
   "private": true,
   "version": "0.3.0",
-  "description": "Local-first hardened EPUB, FB2, and PDF to Markdown converter.",
+  "description": "Local-first EPUB, FB2, and PDF sanitizer for searchable, multimodal LLM source packages.",
   "homepage": "https://github.com/leshxt/Book2Markdown#readme",
   "repository": {
     "type": "git",

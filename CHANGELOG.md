@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Repositioned the interface around local ebook sanitization and LLM preparation, added format-specific
+  output guidance, a graphical `by leshxt` GitHub credit, and clearer success metrics.
 - Added complete FictionBook 2 support for `.fb2` and single-document `.fb2.zip`, including sections,
   note bodies, cover art, embedded raster/SVG graphics, stable figure positions and the synchronized LLM package.
 - Added bounded whole-page PDF rendering and a rebuilt searchable `document.sanitized.pdf`: passive

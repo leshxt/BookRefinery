@@ -1,7 +1,8 @@
 # Roadmap
 
-Book2Markdown aims to become a focused, local ebook-to-Markdown converter without weakening
-its privacy and hostile-input boundaries.
+Book2Markdown aims to become a focused, local ebook-sanitization and LLM-preparation studio
+without weakening its privacy and hostile-input boundaries. Markdown remains an important
+portable output, but not the product's only destination.
 
 ## Current: unreleased
 
