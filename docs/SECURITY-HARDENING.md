@@ -1,6 +1,6 @@
 # Security hardening and rewrite notes
 
-Book2Markdown began as a security review of `uxiew/epub2MD` and became an independent rewrite.
+BookRefinery began as a security review of `uxiew/epub2MD` and became an independent rewrite.
 The original project is small and useful, but its architecture was not designed for adversarial
 documents. The changes below describe technical differences, not an allegation of malicious
 intent in the upstream project.
@@ -8,7 +8,7 @@ intent in the upstream project.
 The baseline inspected on 14 July 2026 was upstream commit
 `87bebe47a077a43cbda333c8302c25ff589e9c9d`.
 
-| Area | Baseline behavior | Book2Markdown |
+| Area | Baseline behavior | BookRefinery |
 |---|---|---|
 | Dependency state | Frozen lock contained 16 production advisories during the audit | Current exact versions; npm audit is a required local and CI gate |
 | ZIP handling | Whole archive synchronously expanded without resource limits | Size, count and compression-ratio checks plus a disposable worker |
@@ -16,11 +16,11 @@ The baseline inspected on 14 July 2026 was upstream commit
 | XML | Entity processing remained reachable | Entities and DTD declarations rejected; entity processing disabled |
 | Remote resources | Optional localization fetched referenced URLs | No network feature; production CSP uses `connect-src 'none'` |
 | Active content | HTML became Markdown without a strict passive-output boundary | Scripts, frames, forms and dangerous URL schemes are removed; SVG is rebuilt from a passive allowlist |
-| UI isolation | Command-line process only | Parsing worker can be cancelled and is terminated after 120 seconds |
+| UI isolation | Command-line process only | Disposable preflight/conversion workers; ordinary jobs stop after 120 seconds and bounded opt-in OCR has a separate timeout |
 | Preview | Not applicable | Plain-text preview; converted content never becomes DOM HTML |
 | Supply chain | Release commands used dynamically resolved tooling | Exact lockfile, SHA-pinned Actions and Dependabot |
 | Image handling | Referenced files could pass through without format-specific sanitization | Raster signatures are verified; SVG scripts, events, active elements and unsafe references are stripped |
-| LLM ingestion | No dedicated output contract | Stable figure IDs synchronize normalized Markdown, safe assets and a rebuilt passive visual EPUB; instruction-like text is reported without deletion |
+| LLM ingestion | No dedicated output contract | NotebookLM, RAG, readable Markdown and safe-archive profiles declare their exact files before processing; stable IDs synchronize text and visuals |
 | Format scope | EPUB | EPUB 2/3, FictionBook 2 and PDF with synchronized text/visual outputs |
 
 ## PDF-specific design
@@ -34,7 +34,22 @@ from PDF.js extraction; the original object graph, content streams and fonts are
 
 This sandwich design preserves visible page content and placement while keeping text searchable for
 LLM ingestion and discarding source links, forms, scripts, attachments and annotations. The generated
-Unicode CMaps are parser-tested. It does not attempt OCR, so scanned text remains visual only.
+Unicode CMaps are parser-tested. Optional English/German OCR runs only for pages without useful
+extractable text, uses bundled same-origin worker/core/language assets, and writes recovered text into
+the same Markdown and rebuilt PDF text layers rather than creating a disconnected duplicate.
+
+PDF text order is reconstructed from positioned glyphs with bounded line grouping, two-column reading
+order, dehyphenation and heading heuristics. Page-level Markdown is always emitted for retrieval
+profiles; usable source outlines additionally produce a stable outline map and section files. Page
+render scale and JPEG quality adapt to the remaining page/pixel budget, but the converter never exports
+a partial visual companion.
+
+## Export integrity and profiles
+
+Every profile is an explicit allowlist over the converter's complete safe intermediate output. The UI
+shows the exact paths, formats and optional files for the selected input format before a job starts.
+Every downloaded ZIP includes `SECURITY-REPORT.md` and a deterministic `EXPORT-MANIFEST.json` whose
+SHA-256 entries cover every other exported file.
 
 ## FB2-specific design
 
@@ -46,7 +61,7 @@ safe intermediate representation; source XML is never copied to the companion.
 
 ## SVG-specific design
 
-SVG is XML and can also be active web content. Book2Markdown therefore never copies an SVG
+SVG is XML and can also be active web content. BookRefinery therefore never copies an SVG
 verbatim. It parses the file with entity processing disabled, keeps only passive drawing, text,
 gradient, clipping and grouping elements, filters attributes and styles, and rewrites references
 only when they resolve to a signature-checked local raster asset. Unsupported nodes are removed
@@ -66,7 +81,8 @@ appendix so sanitization does not silently discard potentially meaningful inform
 The automated suite covers normal conversion plus traversal paths, duplicate archive names,
 extreme compression, XML entities, legacy EPUB 2 doctypes, active HTML, hostile SVG, visual SVG
 spine items, FB2 notes/images/Base64 mismatches, remote URLs, PDF text extraction and searchable PDF
-rebuilding. The full
+rebuilding. It also includes seeded unknown-binary fuzz cases, profile/manifest contracts, PDF
+layout/outline regression fixtures and PWA asset-integrity checks. The full
 gate is:
 
 ```text

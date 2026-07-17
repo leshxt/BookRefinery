@@ -1,4 +1,5 @@
 import type { ConversionProgress, ConversionResult, ConversionSummary } from '../core/convert'
+import type { ConversionOptions, DocumentInspection } from '../core/contracts'
 import { SECURITY_POLICY } from '../core/policy'
 import type { SecurityErrorCode } from '../core/errors'
 import type { WorkerRequest, WorkerResponse } from './protocol'
@@ -18,13 +19,14 @@ function isSummary(value: unknown): value is ConversionSummary {
   const candidate = value as Record<string, unknown>
   return (
     typeof candidate['title'] === 'string' &&
-    (candidate['format'] === 'epub' || candidate['format'] === 'pdf') &&
+    (candidate['format'] === 'epub' || candidate['format'] === 'fb2' || candidate['format'] === 'pdf') &&
     typeof candidate['units'] === 'number' &&
     (candidate['unitLabel'] === 'chapters' || candidate['unitLabel'] === 'pages') &&
     typeof candidate['assets'] === 'number' &&
     typeof candidate['inputBytes'] === 'number' &&
     typeof candidate['processedBytes'] === 'number' &&
     typeof candidate['outputBytes'] === 'number' &&
+    (candidate['ocrPages'] === undefined || typeof candidate['ocrPages'] === 'number') &&
     Array.isArray(candidate['warnings']) &&
     candidate['warnings'].every((warning) => typeof warning === 'string')
   )
@@ -34,6 +36,29 @@ function isWorkerResponse(value: unknown): value is WorkerResponse {
   if (typeof value !== 'object' || value === null) return false
   const candidate = value as Record<string, unknown>
 
+  if (candidate['type'] === 'inspection-success') {
+    const inspection = candidate['inspection']
+    if (typeof inspection !== 'object' || inspection === null) return false
+    const inspectionCandidate = inspection as Record<string, unknown>
+    return (
+      (inspectionCandidate['format'] === 'epub' ||
+        inspectionCandidate['format'] === 'fb2' ||
+        inspectionCandidate['format'] === 'pdf') &&
+      typeof inspectionCandidate['title'] === 'string' &&
+      typeof inspectionCandidate['units'] === 'number' &&
+      (inspectionCandidate['unitLabel'] === 'chapters' || inspectionCandidate['unitLabel'] === 'pages') &&
+      typeof inspectionCandidate['graphics'] === 'number' &&
+      typeof inspectionCandidate['inputBytes'] === 'number' &&
+      typeof inspectionCandidate['processedBytes'] === 'number' &&
+      (inspectionCandidate['textCoverage'] === 'full' ||
+        inspectionCandidate['textCoverage'] === 'partial' ||
+        inspectionCandidate['textCoverage'] === 'none' ||
+        inspectionCandidate['textCoverage'] === 'unknown') &&
+      typeof inspectionCandidate['ocrRecommended'] === 'boolean' &&
+      Array.isArray(inspectionCandidate['warnings']) &&
+      inspectionCandidate['warnings'].every((warning) => typeof warning === 'string')
+    )
+  }
   if (candidate['type'] === 'progress') {
     const progress = candidate['progress']
     return (
@@ -54,8 +79,20 @@ function isWorkerResponse(value: unknown): value is WorkerResponse {
   return candidate['type'] === 'error' && typeof candidate['code'] === 'string' && typeof candidate['message'] === 'string'
 }
 
+function isPdfJsTransportMessage(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null) return false
+  const candidate = value as Record<string, unknown>
+  return (
+    candidate['type'] === undefined &&
+    typeof candidate['sourceName'] === 'string' &&
+    typeof candidate['targetName'] === 'string' &&
+    (typeof candidate['action'] === 'string' || typeof candidate['action'] === 'number')
+  )
+}
+
 export async function runConversion(
   file: File,
+  options: ConversionOptions,
   onProgress: (progress: ConversionProgress) => void,
   signal: AbortSignal,
 ): Promise<ConversionResult> {
@@ -64,7 +101,7 @@ export async function runConversion(
   return new Promise((resolve, reject) => {
     const worker = new Worker(new URL('./converter.worker.ts', import.meta.url), {
       type: 'module',
-      name: 'book2markdown-converter',
+      name: 'bookrefinery-converter',
     })
     let settled = false
 
@@ -81,11 +118,17 @@ export async function runConversion(
       reject(new DOMException('Conversion cancelled.', 'AbortError'))
     }
 
+    const timeoutMs = options.ocr.enabled && file.name.toLocaleLowerCase('en-US').endsWith('.pdf')
+      ? SECURITY_POLICY.ocrWorkerTimeoutMs
+      : SECURITY_POLICY.workerTimeoutMs
     const timeout = globalThis.setTimeout(() => {
       if (settled) return
       cleanup()
-      reject(new WorkerConversionError('LIMIT_EXCEEDED', 'The 120-second safety timeout was reached.'))
-    }, SECURITY_POLICY.workerTimeoutMs)
+      reject(new WorkerConversionError(
+        'LIMIT_EXCEEDED',
+        `The ${Math.round(timeoutMs / 60_000)}-minute safety timeout was reached.`,
+      ))
+    }, timeoutMs)
 
     signal.addEventListener('abort', abort, { once: true })
     worker.onerror = () => {
@@ -95,6 +138,9 @@ export async function runConversion(
     }
     worker.onmessage = (event: MessageEvent<unknown>) => {
       if (settled) return
+      // PDF.js uses an internal, namespaced message channel while it parses a
+      // document. Those transport packets cannot complete or influence a job.
+      if (event.data === undefined || isPdfJsTransportMessage(event.data)) return
       if (!isWorkerResponse(event.data)) {
         cleanup()
         reject(new WorkerConversionError('CONVERSION_FAILED', 'The conversion worker returned invalid data.'))
@@ -104,6 +150,11 @@ export async function runConversion(
       const response = event.data
       if (response.type === 'progress') {
         onProgress(response.progress)
+        return
+      }
+      if (response.type === 'inspection-success') {
+        cleanup()
+        reject(new WorkerConversionError('CONVERSION_FAILED', 'The conversion worker returned an inspection result.'))
         return
       }
       if (response.type === 'error') {
@@ -121,7 +172,78 @@ export async function runConversion(
       })
     }
 
-    const request: WorkerRequest = { type: 'convert', filename: file.name, buffer: inputBuffer }
+    const request: WorkerRequest = {
+      type: 'convert',
+      filename: file.name,
+      buffer: inputBuffer,
+      options,
+    }
+    worker.postMessage(request, [inputBuffer])
+  })
+}
+
+export async function runInspection(
+  file: File,
+  signal: AbortSignal,
+): Promise<DocumentInspection> {
+  const inputBuffer = await file.arrayBuffer()
+
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(new URL('./converter.worker.ts', import.meta.url), {
+      type: 'module',
+      name: 'bookrefinery-preflight',
+    })
+    let settled = false
+
+    const cleanup = (): void => {
+      settled = true
+      globalThis.clearTimeout(timeout)
+      signal.removeEventListener('abort', abort)
+      worker.terminate()
+    }
+    const abort = (): void => {
+      if (settled) return
+      cleanup()
+      reject(new DOMException('Inspection cancelled.', 'AbortError'))
+    }
+    const timeout = globalThis.setTimeout(() => {
+      if (settled) return
+      cleanup()
+      reject(new WorkerConversionError('LIMIT_EXCEEDED', 'The 45-second preflight limit was reached.'))
+    }, 45_000)
+
+    signal.addEventListener('abort', abort, { once: true })
+    worker.onerror = () => {
+      if (settled) return
+      cleanup()
+      reject(new WorkerConversionError('CONVERSION_FAILED', 'The isolated preflight worker crashed.'))
+    }
+    worker.onmessage = (event: MessageEvent<unknown>) => {
+      if (settled) return
+      // See the conversion handler above. Dependency transport chatter is not
+      // a response and cannot complete, fail, or otherwise influence the job.
+      if (event.data === undefined || isPdfJsTransportMessage(event.data)) return
+      if (!isWorkerResponse(event.data)) {
+        cleanup()
+        reject(new WorkerConversionError('CONVERSION_FAILED', 'The preflight worker returned invalid data.'))
+        return
+      }
+      const response = event.data
+      if (response.type === 'error') {
+        cleanup()
+        reject(new WorkerConversionError(response.code, response.message))
+        return
+      }
+      if (response.type !== 'inspection-success') return
+      cleanup()
+      resolve(response.inspection)
+    }
+
+    const request: WorkerRequest = {
+      type: 'inspect',
+      filename: file.name,
+      buffer: inputBuffer,
+    }
     worker.postMessage(request, [inputBuffer])
   })
 }

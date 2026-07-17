@@ -1,5 +1,6 @@
 node_modules/
 dist/
+public/ocr/
 coverage/
 *.local
 .DS_Store

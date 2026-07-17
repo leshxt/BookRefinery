@@ -18,9 +18,14 @@ export const SECURITY_POLICY = {
   maxVisualPdfPages: 500,
   maxVisualPdfPixels: 240_000_000,
   maxPdfSourceImagePixels: 20_000_000,
+  maxBatchFiles: 12,
+  maxOcrPages: 30,
+  maxOcrPixels: 90_000_000,
+  maxOcrPagePixels: 4_500_000,
   maxPathLength: 1_024,
   maxPathSegmentLength: 240,
   workerTimeoutMs: 120_000,
+  ocrWorkerTimeoutMs: 600_000,
 } as const
 
 export function formatBytes(bytes: number): string {

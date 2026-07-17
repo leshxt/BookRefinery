@@ -2,21 +2,60 @@
 
 import { GlobalWorkerOptions } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
+import {
+  OUTPUT_PROFILE_IDS,
+  type ConversionOptions,
+  type OcrLanguage,
+} from '../core/contracts'
 import { convertDocument } from '../core/convert'
 import { publicError } from '../core/errors'
+import { inspectDocument } from '../core/inspection'
 import type { WorkerRequest, WorkerResponse } from './protocol'
 
 const workerScope: DedicatedWorkerGlobalScope = self as DedicatedWorkerGlobalScope
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
-function isConvertRequest(value: unknown): value is WorkerRequest {
+function isConversionOptions(value: unknown): value is ConversionOptions {
   if (typeof value !== 'object' || value === null) return false
   const candidate = value as Record<string, unknown>
-  return candidate['type'] === 'convert' && typeof candidate['filename'] === 'string' && candidate['buffer'] instanceof ArrayBuffer
+  const ocr = candidate['ocr']
+  if (
+    !OUTPUT_PROFILE_IDS.includes(candidate['profile'] as never) ||
+    typeof ocr !== 'object' ||
+    ocr === null
+  ) {
+    return false
+  }
+  const ocrCandidate = ocr as Record<string, unknown>
+  const languages = ocrCandidate['languages']
+  return (
+    typeof ocrCandidate['enabled'] === 'boolean' &&
+    Array.isArray(languages) &&
+    languages.length > 0 &&
+    languages.every((language): language is OcrLanguage => language === 'eng' || language === 'deu')
+  )
+}
+
+function isWorkerRequest(value: unknown): value is WorkerRequest {
+  if (typeof value !== 'object' || value === null) return false
+  const candidate = value as Record<string, unknown>
+  if (
+    candidate['type'] === 'inspect' &&
+    typeof candidate['filename'] === 'string' &&
+    candidate['buffer'] instanceof ArrayBuffer
+  ) {
+    return true
+  }
+  return (
+    candidate['type'] === 'convert' &&
+    typeof candidate['filename'] === 'string' &&
+    candidate['buffer'] instanceof ArrayBuffer &&
+    isConversionOptions(candidate['options'])
+  )
 }
 
 async function handleRequest(value: unknown): Promise<void> {
-  if (!isConvertRequest(value)) {
+  if (!isWorkerRequest(value)) {
     const response: WorkerResponse = {
       type: 'error',
       code: 'CONVERSION_FAILED',
@@ -27,10 +66,16 @@ async function handleRequest(value: unknown): Promise<void> {
   }
 
   try {
+    if (value.type === 'inspect') {
+      const inspection = await inspectDocument(new Uint8Array(value.buffer), value.filename)
+      const response: WorkerResponse = { type: 'inspection-success', inspection }
+      workerScope.postMessage(response)
+      return
+    }
     const result = await convertDocument(new Uint8Array(value.buffer), value.filename, (progress) => {
       const response: WorkerResponse = { type: 'progress', progress }
       workerScope.postMessage(response)
-    })
+    }, value.options)
     const transferable = result.archive.buffer.slice(
       result.archive.byteOffset,
       result.archive.byteOffset + result.archive.byteLength,

@@ -1,5 +1,9 @@
 import { strToU8, zipSync } from 'fflate'
 import { openSecureArchive } from './archive'
+import {
+  DEFAULT_CONVERSION_OPTIONS,
+  type ConversionOptions,
+} from './contracts'
 import { readEpubPackage, type ManifestItem } from './epub'
 import { SecurityError } from './errors'
 import { convertFb2, convertFb2Zip } from './fb2'
@@ -12,6 +16,7 @@ import {
   type LlmChapter,
 } from './llm'
 import { xhtmlToSafeMarkdown } from './markdown'
+import { packageConversionResult } from './manifest'
 import { archiveDirname, resolveArchiveReference, safeOutputName } from './path'
 import { convertPdf } from './pdf'
 import { SECURITY_POLICY } from './policy'
@@ -42,6 +47,7 @@ export interface ConversionSummary {
   readonly inputBytes: number
   readonly processedBytes: number
   readonly outputBytes: number
+  readonly ocrPages?: number
   readonly warnings: readonly string[]
 }
 
@@ -345,13 +351,15 @@ export function convertEpub(
 
   return {
     archive: resultArchive,
-    filename: `${sourceStem(sourceName)}-markdown.zip`,
+    filename: `${sourceStem(sourceName)}-refined.zip`,
     summary,
     preview: combined.slice(0, 8_000),
   }
 }
 
-function inputFormat(bytes: Uint8Array, sourceName: string): 'epub' | 'fb2' | 'fb2zip' | 'pdf' {
+export type InputFormat = 'epub' | 'fb2' | 'fb2zip' | 'pdf'
+
+export function detectInputFormat(bytes: Uint8Array, sourceName: string): InputFormat {
   const isPdf =
     bytes.byteLength >= 5 &&
     bytes[0] === 0x25 &&
@@ -381,14 +389,22 @@ export async function convertDocument(
   bytes: Uint8Array,
   sourceName: string,
   onProgress: ProgressReporter = () => undefined,
+  options: ConversionOptions = DEFAULT_CONVERSION_OPTIONS,
 ): Promise<ConversionResult> {
   if (bytes.byteLength > SECURITY_POLICY.maxInputBytes) {
     throw new SecurityError('LIMIT_EXCEEDED', 'The file exceeds the 80 MB input limit.')
   }
 
-  const format = inputFormat(bytes, sourceName)
-  if (format === 'pdf') return convertPdf(bytes, sourceName, onProgress)
-  if (format === 'fb2') return convertFb2(bytes, sourceName, onProgress)
-  if (format === 'fb2zip') return convertFb2Zip(bytes, sourceName, onProgress)
-  return convertEpub(bytes, sourceName, onProgress)
+  const format = detectInputFormat(bytes, sourceName)
+  const rawResult = format === 'pdf'
+    ? await convertPdf(bytes, sourceName, onProgress, options)
+    : format === 'fb2'
+      ? convertFb2(bytes, sourceName, onProgress)
+      : format === 'fb2zip'
+        ? convertFb2Zip(bytes, sourceName, onProgress)
+        : convertEpub(bytes, sourceName, onProgress)
+  onProgress({ percent: 98, label: 'Applying the selected output profile' })
+  const result = await packageConversionResult(rawResult, options.profile)
+  onProgress({ percent: 100, label: 'Preparation complete' })
+  return result
 }

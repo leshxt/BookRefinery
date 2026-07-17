@@ -263,7 +263,7 @@ function buildCanonicalBook(
     ...(metadata.author ? [`author: ${yamlString(metadata.author)}`] : []),
     ...(metadata.language ? [`language: ${yamlString(metadata.language)}`] : []),
     `source_format: ${JSON.stringify(metadata.sourceFormat)}`,
-    'profile: "Book2Markdown synchronized LLM export"',
+    'profile: "BookRefinery synchronized LLM export"',
     `figure_count: ${assets.length}`,
     '---',
   ].join('\n')
@@ -430,7 +430,7 @@ function buildSanitizedEpub(
   ))
   files['EPUB/package.opf'] = strToU8(`<?xml version="1.0" encoding="UTF-8"?>
 <package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="book-id">
-<metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="book-id">urn:book2markdown:sanitized-companion</dc:identifier><dc:title>${escapeXml(plainText(metadata.title, 1_000))} — safe visual companion</dc:title>${metadata.author ? `<dc:creator>${escapeXml(plainText(metadata.author, 1_000))}</dc:creator>` : ''}<dc:language>${escapeXml(plainText(metadata.language ?? 'und', 50) || 'und')}</dc:language><meta property="dcterms:modified">2026-01-01T00:00:00Z</meta></metadata>
+<metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:identifier id="book-id">urn:bookrefinery:sanitized-companion</dc:identifier><dc:title>${escapeXml(plainText(metadata.title, 1_000))} — safe visual companion</dc:title>${metadata.author ? `<dc:creator>${escapeXml(plainText(metadata.author, 1_000))}</dc:creator>` : ''}<dc:language>${escapeXml(plainText(metadata.language ?? 'und', 50) || 'und')}</dc:language><meta property="dcterms:modified">2026-01-01T00:00:00Z</meta></metadata>
 <manifest><item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav" /><item id="styles" href="styles.css" media-type="text/css" />${chapterManifest.join('')}${assetManifest.join('')}</manifest>
 <spine>${chapterSpine.join('')}</spine>
 </package>`)

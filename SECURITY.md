@@ -2,7 +2,7 @@
 
 ## Threat model
 
-Book2Markdown assumes that every EPUB, FB2 and PDF may be intentionally malicious. The application
+BookRefinery assumes that every EPUB, FB2 and PDF may be intentionally malicious. The application
 has no backend, never uploads a document and ships with a Content Security Policy that blocks
 all network connections.
 
@@ -14,7 +14,8 @@ is impossible.
 
 ### All documents
 
-- Conversion runs in a dedicated Web Worker with cancellation and a 120-second watchdog.
+- Preflight and conversion run in disposable Web Workers. Ordinary conversion has a 120-second
+  watchdog; opt-in OCR has a separate bounded timeout because language initialization is heavier.
 - Input is capped at 80 MB and generated output at 300 MB.
 - Untrusted HTML/Markdown is never rendered; the UI preview is plain text.
 - The production CSP blocks `connect`, frames, objects, forms and non-local scripts.
@@ -63,13 +64,18 @@ is impossible.
 - Every page is flattened to JPEG and embedded in a newly created PDF, then paired with an invisible
   searchable Unicode layer rebuilt from locally extracted text. No source font or content object is copied.
   If every page cannot be rendered within the limits, no partial sanitized PDF is exported.
+- Optional OCR runs only on pages without useful extracted text. English and German worker, core and
+  language assets ship with the app and are loaded from the same origin; no OCR service or CDN is used.
+- OCR is capped at 30 attempted pages, 4.5 million pixels per page and 90 million pixels in total.
+  Recovered text enters the normal Markdown and sanitized PDF text layers.
 
 ## Known limitations
 
 - A Web Worker provides termination and UI isolation, but browsers do not expose a strict
   per-worker memory quota.
 - PDF text order is heuristic because PDF stores positioned glyphs rather than semantic blocks.
-- No OCR is performed; scanned pages remain visible in the sanitized PDF but cannot gain a searchable text layer.
+- OCR is opt-in and may contain recognition errors. It does not replace extractable source text and
+  currently supports the bundled English and German models only.
 - Raster image decoders and the SVG renderer remain part of the consumer's eventual Markdown
   viewer, not this app. Sanitization reduces active-content risk but does not rasterize SVG.
 - Caption and alt-text extraction cannot describe arbitrary visual meaning. The synchronized
