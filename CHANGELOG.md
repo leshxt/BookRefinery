@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.2 - 2026-07-17
+
+- Added public GitHub noreply maintainer metadata required by Debian packages.
+
 ## 0.6.1 - 2026-07-17
 
 - Replaced the Windows WebView2/Tauri wrapper with a bundled Electron runtime whose private session
