@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.1 - 2026-07-17
 
 - Replaced the Windows WebView2/Tauri wrapper with a bundled Electron runtime whose private session
   blocks every remote renderer request, disables background networking and updates, denies permissions,
@@ -14,6 +14,7 @@
   repair counts in reports, and allowed bundled same-origin OCR assets through the otherwise closed CSP.
 - Added the concrete PDF font-map regression corpus, native request/save policy tests, and Electron
   Windows/Linux packaging workflow.
+- Fixed the hardened Electron executable lookup for Linux AppImage and Debian packaging.
 
 ## 0.4.0 - 2026-07-17
 

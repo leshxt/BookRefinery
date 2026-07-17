@@ -1,11 +1,25 @@
 import { FuseVersion, FuseV1Options, flipFuses } from '@electron/fuses'
 import { join } from 'node:path'
 
+export function resolveElectronExecutablePath(context, platform = process.platform) {
+  const productFilename = context.packager.appInfo.productFilename
+  if (platform === 'darwin') {
+    return join(context.appOutDir, `${productFilename}.app`, 'Contents', 'MacOS', productFilename)
+  }
+
+  if (platform === 'win32') {
+    return join(context.appOutDir, `${productFilename}.exe`)
+  }
+
+  const linuxExecutableName = context.packager.executableName
+  if (typeof linuxExecutableName !== 'string' || linuxExecutableName.length === 0) {
+    throw new Error('electron-builder did not expose the Linux executable name')
+  }
+  return join(context.appOutDir, linuxExecutableName)
+}
+
 export default async function hardenElectronBinary(context) {
-  const executableName = context.packager.appInfo.productFilename
-  const executablePath = process.platform === 'darwin'
-    ? join(context.appOutDir, `${executableName}.app`, 'Contents', 'MacOS', executableName)
-    : join(context.appOutDir, `${executableName}${process.platform === 'win32' ? '.exe' : ''}`)
+  const executablePath = resolveElectronExecutablePath(context)
 
   await flipFuses(executablePath, {
     version: FuseVersion.V1,
