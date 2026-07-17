@@ -1,4 +1,4 @@
-import { useReducer, useRef, useState, type SVGProps } from 'react'
+import { useEffect, useReducer, useRef, useState, type SVGProps } from 'react'
 import { zipSync } from 'fflate'
 import {
   OUTPUT_PROFILES,
@@ -61,6 +61,20 @@ type JobAction =
   | { readonly type: 'retry'; readonly id: string }
   | { readonly type: 'remove'; readonly id: string }
   | { readonly type: 'clear-finished' }
+
+interface InstallPromptResult {
+  readonly outcome: 'accepted' | 'dismissed'
+  readonly platform: string
+}
+
+interface AppInstallPromptEvent extends Event {
+  prompt(): Promise<InstallPromptResult>
+}
+
+type DesktopInstallState =
+  | { readonly kind: 'available'; readonly prompt: AppInstallPromptEvent }
+  | { readonly kind: 'installed' }
+  | { readonly kind: 'browser-menu' }
 
 function jobsReducer(jobs: readonly Job[], action: JobAction): readonly Job[] {
   switch (action.type) {
@@ -217,14 +231,42 @@ function jobStatusLabel(job: Job): string {
   }
 }
 
+function isStandaloneApp(): boolean {
+  return window.matchMedia('(display-mode: standalone)').matches
+}
+
+function outputFormatSummary(profile: OutputProfileId, format: DocumentFormat): string {
+  return [...new Set(profileOutputFiles(profile, format).map((file) => file.format))].join(' · ')
+}
+
 export function App() {
   const [jobs, dispatch] = useReducer(jobsReducer, [])
   const [dragging, setDragging] = useState(false)
   const [profile, setProfile] = useState<OutputProfileId>('notebooklm')
   const [ocrEnabled, setOcrEnabled] = useState(false)
+  const [desktopInstall, setDesktopInstall] = useState<DesktopInstallState>(() =>
+    isStandaloneApp() ? { kind: 'installed' } : { kind: 'browser-menu' })
   const inspectionControllers = useRef(new Map<string, AbortController>())
   const activeConversion = useRef<AbortController | null>(null)
   const stopBatch = useRef(false)
+
+  useEffect(() => {
+    const captureInstallPrompt = (event: Event): void => {
+      event.preventDefault()
+      setDesktopInstall({
+        kind: 'available',
+        prompt: event as AppInstallPromptEvent,
+      })
+    }
+    const markInstalled = (): void => setDesktopInstall({ kind: 'installed' })
+
+    window.addEventListener('beforeinstallprompt', captureInstallPrompt)
+    window.addEventListener('appinstalled', markInstalled)
+    return () => {
+      window.removeEventListener('beforeinstallprompt', captureInstallPrompt)
+      window.removeEventListener('appinstalled', markInstalled)
+    }
+  }, [])
 
   const batchRunning = jobs.some((job) => job.status === 'queued' || job.status === 'running')
   const readyJobs = jobs.filter((job): job is Extract<Job, { status: 'ready' }> => job.status === 'ready')
@@ -336,6 +378,14 @@ export function App() {
     dispatch({ type: 'unqueue' })
   }
 
+  const requestDesktopInstall = async (): Promise<void> => {
+    if (desktopInstall.kind !== 'available') return
+    const result = await desktopInstall.prompt.prompt()
+    setDesktopInstall(result.outcome === 'accepted'
+      ? { kind: 'installed' }
+      : { kind: 'browser-menu' })
+  }
+
   const retryJob = (job: Extract<Job, { status: 'error' }>): void => {
     dispatch({ type: 'retry', id: job.id })
     if (!job.inspection) {
@@ -380,7 +430,20 @@ export function App() {
             <GitHubIcon /><span>by <strong translate="no">leshxt</strong></span>
           </a>
         </div>
-        <div className="local-badge"><span aria-hidden="true" />100% local</div>
+        <div className="topbar-actions">
+          {desktopInstall.kind === 'available' && (
+            <button className="install-shortcut" type="button" onClick={() => void requestDesktopInstall()}>
+              <DownloadIcon /> Install app
+            </button>
+          )}
+          {desktopInstall.kind === 'installed' && (
+            <span className="install-shortcut is-installed"><DownloadIcon /> Installed</span>
+          )}
+          {desktopInstall.kind === 'browser-menu' && (
+            <a className="install-shortcut" href="#desktop-install"><DownloadIcon /> Desktop app</a>
+          )}
+          <div className="local-badge"><span aria-hidden="true" />100% local</div>
+        </div>
       </header>
 
       <main id="main">
@@ -422,6 +485,21 @@ export function App() {
           </div>
         </section>
 
+        <aside className="desktop-install" id="desktop-install" aria-labelledby="desktop-install-title">
+          <span className="desktop-install-mark"><DownloadIcon /></span>
+          <div>
+            <strong id="desktop-install-title">Install BookRefinery on this computer</strong>
+            <p>Offline-capable desktop PWA with its own app window. This release does not include a native <code>.exe</code>.</p>
+          </div>
+          {desktopInstall.kind === 'available' && (
+            <button type="button" onClick={() => void requestDesktopInstall()}>Install desktop app</button>
+          )}
+          {desktopInstall.kind === 'installed' && <span className="desktop-install-state">Installed</span>}
+          {desktopInstall.kind === 'browser-menu' && (
+            <span className="desktop-install-help">Browser menu → Install BookRefinery</span>
+          )}
+        </aside>
+
         <section className="studio-card" id="workspace" aria-labelledby="workspace-title">
           <div className="studio-heading">
             <div>
@@ -440,28 +518,37 @@ export function App() {
             <div className="profile-grid">
               {OUTPUT_PROFILES.map((candidate) => {
                 const selected = profile === candidate.id
+                const outputFiles = profileOutputFiles(candidate.id, focusFormat)
                 return (
-                  <label className={`profile-card ${selected ? 'is-selected' : ''}`} key={candidate.id}>
-                    <input
-                      type="radio"
-                      name="output-profile"
-                      value={candidate.id}
-                      checked={selected}
-                      onChange={() => setProfile(candidate.id)}
-                    />
-                    <span className="profile-check" aria-hidden="true">{selected ? '✓' : ''}</span>
-                    <strong>{candidate.name}</strong>
-                    <span className="profile-summary">{candidate.summary}</span>
-                    <ul className="output-file-list">
-                      {profileOutputFiles(candidate.id, focusFormat).map((file) => (
-                        <li key={file.path}>
-                          <code>{file.path}</code>
-                          <span>{file.format}{file.optional ? ' · if available' : ''}</span>
-                          <small>{file.description}</small>
-                        </li>
-                      ))}
-                    </ul>
-                  </label>
+                  <article className={`profile-card ${selected ? 'is-selected' : ''}`} key={candidate.id}>
+                    <label className="profile-choice">
+                      <input
+                        type="radio"
+                        name="output-profile"
+                        value={candidate.id}
+                        checked={selected}
+                        onChange={() => setProfile(candidate.id)}
+                      />
+                      <span className="profile-check" aria-hidden="true">{selected ? '✓' : ''}</span>
+                      <strong>{candidate.name}</strong>
+                      <span className="profile-summary">{candidate.summary}</span>
+                      <small className="profile-formats">
+                        <span>Formats</span> {outputFormatSummary(candidate.id, focusFormat)}
+                      </small>
+                    </label>
+                    <details className="profile-details">
+                      <summary>View exact files <span>{outputFiles.length}</span></summary>
+                      <ul className="output-file-list">
+                        {outputFiles.map((file) => (
+                          <li key={file.path}>
+                            <code>{file.path}</code>
+                            <span>{file.format}{file.optional ? ' · if available' : ''}</span>
+                            <small>{file.description}</small>
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  </article>
                 )
               })}
             </div>

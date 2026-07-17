@@ -83,16 +83,23 @@ npm run dev
 
 Open the local URL printed by Vite, normally `http://localhost:5173`.
 
-For the installable production version:
+### Install as a desktop app
+
+The current desktop release is an installable offline-capable PWA, not a native `.exe`. Build and
+serve the production version:
 
 ```powershell
 npm run build
 npm run preview
 ```
 
-Open the preview URL, then use the browser's **Install BookRefinery** action. The production build
-generates a versioned service worker that precaches the complete app, PDF runtime, OCR worker,
-WebAssembly core, and English/German language data for subsequent offline use.
+Open the preview URL. In Chrome or Edge, use the visible **Install desktop app** button once the
+browser reports that the app is installable. Other supporting browsers expose the equivalent action
+in their browser menu. The installed app gets its own window and launcher icon.
+
+The production build generates a versioned service worker that precaches the complete app, PDF
+runtime, OCR worker, WebAssembly core, and English/German language data for subsequent offline use.
+A separately packaged and signed native Windows `.exe` is not part of this release.
 
 ## Security model
 
