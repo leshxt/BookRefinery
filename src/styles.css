@@ -52,6 +52,11 @@ body::before {
 .creator-link strong { color: #a9beb5; font-weight: 650; }
 .creator-link:hover, .creator-link:hover strong { color: var(--mint); }
 .creator-link:focus-visible, footer a:focus-visible, .brand:focus-visible { outline: 2px solid white; outline-offset: 4px; border-radius: 4px; }
+.topbar-actions { display: flex; align-items: center; gap: 9px; }
+.install-shortcut { min-height: 35px; display: inline-flex; align-items: center; gap: 7px; padding: 0 12px; border: 1px solid rgba(88,240,177,.24); border-radius: 999px; background: rgba(88,240,177,.05); color: #c8e4d8; cursor: pointer; font-size: .72rem; font-weight: 650; text-decoration: none; transition: border-color .16s, background .16s, color .16s; }
+.install-shortcut:hover { border-color: rgba(88,240,177,.5); background: rgba(88,240,177,.1); color: white; }
+.install-shortcut svg { width: 15px; height: 15px; color: var(--mint); }
+.install-shortcut.is-installed { cursor: default; }
 .local-badge { display: flex; align-items: center; gap: 9px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 999px; color: #b7cac1; font-size: .78rem; text-transform: uppercase; letter-spacing: .11em; }
 .local-badge span { width: 7px; height: 7px; border-radius: 50%; background: var(--mint); box-shadow: 0 0 14px var(--mint); }
 
@@ -75,6 +80,20 @@ main { padding-bottom: 90px; }
 .outcome-grid article > span { color: var(--mint); font: 700 .66rem ui-monospace, monospace; letter-spacing: .1em; text-transform: uppercase; }
 .outcome-grid h3 { margin: 38px 0 10px; font-size: 1rem; }
 .outcome-grid p { margin: 0; color: var(--muted); font-size: .8rem; line-height: 1.62; overflow-wrap: anywhere; }
+
+.desktop-install { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 15px; margin-bottom: 24px; padding: 15px 18px; border: 1px solid rgba(88,240,177,.18); border-radius: 16px; background: rgba(20, 51, 40, .35); }
+.desktop-install-mark { width: 36px; height: 36px; display: grid; place-items: center; border-radius: 10px; color: var(--mint); background: rgba(88,240,177,.09); }
+.desktop-install-mark svg { width: 19px; }
+.desktop-install strong { display: block; color: #e7f7ef; font-size: .83rem; }
+.desktop-install p { margin: 4px 0 0; color: var(--muted); font-size: .69rem; line-height: 1.45; }
+.desktop-install p code { color: #bad4c8; }
+.desktop-install-actions { display: flex; align-items: center; gap: 10px; }
+.desktop-install button { padding: 9px 12px; border: 1px solid rgba(88,240,177,.35); border-radius: 9px; background: var(--mint); color: var(--ink); cursor: pointer; font-size: .72rem; font-weight: 750; white-space: nowrap; }
+.desktop-install button:hover { background: var(--mint-bright); }
+.desktop-install-actions a { color: #cce4d9; font-size: .7rem; font-weight: 680; text-underline-offset: 3px; white-space: nowrap; }
+.desktop-install-actions a:hover { color: var(--mint); }
+.desktop-install-state, .desktop-install-help { color: #bcd2c8; font-size: .7rem; white-space: nowrap; }
+.desktop-install-state { color: var(--mint); font-weight: 700; }
 
 .studio-card { position: relative; padding: clamp(25px, 5vw, 52px); overflow: hidden; border: 1px solid rgba(119, 190, 159, .2); border-radius: 28px; background: linear-gradient(135deg, rgba(17, 36, 30, .94), rgba(10, 22, 19, .93)); box-shadow: 0 40px 100px rgba(0,0,0,.35); }
 .studio-card::after { content: ""; position: absolute; width: 280px; height: 280px; right: -150px; top: -150px; border-radius: 50%; background: rgba(88,240,177,.11); filter: blur(12px); pointer-events: none; }
@@ -141,16 +160,28 @@ main { padding-bottom: 90px; }
 .profile-picker legend { width: 100%; margin-bottom: 15px; color: #eaf7f1; font-weight: 720; }
 .profile-picker legend small { display: block; margin: 7px 0 0 36px; color: var(--muted); font-size: .75rem; font-weight: 450; }
 .profile-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-.profile-card { position: relative; min-width: 0; padding: 19px; overflow: hidden; border: 1px solid var(--line); border-radius: 16px; background: rgba(4,14,11,.42); cursor: pointer; transition: border-color .18s, background .18s, transform .18s; }
+.profile-card { position: relative; min-width: 0; overflow: hidden; border: 1px solid var(--line); border-radius: 16px; background: rgba(4,14,11,.42); transition: border-color .18s, background .18s, transform .18s; }
 .profile-card:hover { border-color: rgba(88,240,177,.38); transform: translateY(-1px); }
 .profile-card.is-selected { border-color: rgba(88,240,177,.62); background: rgba(32,121,88,.13); box-shadow: inset 0 0 0 1px rgba(88,240,177,.08); }
-.profile-card input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.profile-choice { display: block; padding: 19px; cursor: pointer; }
+.profile-card input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 .profile-card:has(input:focus-visible) { outline: 2px solid white; outline-offset: 3px; }
 .profile-check { position: absolute; top: 17px; right: 17px; width: 22px; height: 22px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 50%; color: var(--ink); background: transparent; font-size: .72rem; }
 .profile-card.is-selected .profile-check { border-color: var(--mint); background: var(--mint); }
-.profile-card > strong { display: block; padding-right: 30px; font-size: .98rem; }
-.profile-summary { display: block; min-height: 40px; margin-top: 7px; color: var(--muted); font-size: .75rem; line-height: 1.5; }
-.output-file-list { display: grid; gap: 8px; margin: 17px 0 0; padding: 13px 0 0; border-top: 1px solid var(--line); list-style: none; }
+.profile-choice > strong { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; padding-right: 30px; font-size: .98rem; }
+.recommended-tag { padding: 3px 6px; border: 1px solid rgba(88,240,177,.3); border-radius: 999px; color: var(--mint); background: rgba(88,240,177,.06); font: 650 .54rem ui-monospace, monospace; letter-spacing: .04em; text-transform: uppercase; }
+.profile-summary { display: block; margin-top: 7px; color: var(--muted); font-size: .75rem; line-height: 1.5; }
+.profile-difference { display: block; margin-top: 5px; color: #c7ddd3; font-size: .67rem; line-height: 1.45; }
+.profile-formats { display: block; margin-top: 9px; color: #9fc4b3; font: 600 .62rem/1.45 ui-monospace, monospace; letter-spacing: .025em; }
+.profile-formats > span { margin-right: 5px; color: var(--mint); text-transform: uppercase; }
+.profile-details { border-top: 1px solid var(--line); }
+.profile-details summary { display: flex; align-items: center; padding: 10px 19px; color: #8da89c; cursor: pointer; font-size: .68rem; list-style: none; transition: color .16s, background .16s; }
+.profile-details summary::-webkit-details-marker { display: none; }
+.profile-details summary:hover { background: rgba(88,240,177,.035); color: #d9ebe3; }
+.profile-details summary::before { content: "＋"; margin-right: 7px; color: var(--mint); }
+.profile-details[open] summary::before { content: "−"; }
+.profile-details summary > span { min-width: 20px; margin-left: auto; padding: 2px 6px; border-radius: 999px; background: rgba(255,255,255,.05); color: #a9beb5; text-align: center; font: .61rem ui-monospace, monospace; }
+.output-file-list { display: grid; gap: 8px; margin: 0; padding: 4px 19px 17px; list-style: none; }
 .output-file-list li { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 8px; }
 .output-file-list code { min-width: 0; overflow: hidden; color: #d8f5e7; text-overflow: ellipsis; white-space: nowrap; font-size: .68rem; }
 .output-file-list li > span { color: var(--mint); font: 650 .59rem ui-monospace, monospace; text-transform: uppercase; }
@@ -210,6 +241,9 @@ main { padding-bottom: 90px; }
 .secondary-button:hover { border-color: rgba(88,240,177,.35); color: white; }
 .secondary-button svg { width: 19px; }
 .primary-button:disabled, .secondary-button:disabled { opacity: .42; cursor: not-allowed; transform: none; }
+.save-notice { margin: 10px 0 0; padding: 10px 12px; border-radius: 9px; color: #c7ddd3; background: rgba(88,240,177,.06); font-size: .72rem; line-height: 1.45; }
+.save-notice-fallback { color: #d7c79f; background: rgba(201,158,58,.08); }
+.save-notice-error { color: #e1aaa5; background: rgba(145,44,39,.12); }
 
 .security-grid { display: grid; grid-template-columns: 1.25fr repeat(3, 1fr); gap: 1px; margin-top: 90px; border: 1px solid var(--line); border-radius: 22px; overflow: hidden; background: var(--line); }
 .security-grid > * { min-height: 270px; padding: 30px; background: #0a1512; }
@@ -237,13 +271,20 @@ footer a:hover { color: var(--mint); }
 @media (max-width: 640px) {
   .app-shell { width: min(100% - 24px, 1180px); }
   .topbar { height: 78px; }
-  .local-badge { font-size: .65rem; }
+  .local-badge { display: none; }
+  .install-shortcut { min-height: 32px; padding-inline: 10px; font-size: .67rem; }
   .hero { padding: 64px 0 42px; }
   .hero h1 { font-size: clamp(3.05rem, 16vw, 4.5rem); }
   .trust-row { display: grid; gap: 11px; }
   .outcome-grid { grid-template-columns: 1fr; }
   .outcome-grid article { padding: 24px; }
   .outcome-grid h3 { margin-top: 22px; }
+  .desktop-install { grid-template-columns: auto minmax(0, 1fr); }
+  .desktop-install-actions, .desktop-install > .desktop-install-state { grid-column: 1 / -1; }
+  .desktop-install-actions { align-items: flex-start; flex-direction: column; padding-left: 51px; }
+  .desktop-install-actions button { width: 100%; }
+  .desktop-install > .desktop-install-state { padding-left: 51px; }
+  .desktop-install-help { white-space: normal; }
   .studio-card { border-radius: 20px; }
   .dropzone { min-height: 205px; padding: 22px; text-align: center; }
   .compact-dropzone { min-height: 116px; flex-direction: row; text-align: left; }

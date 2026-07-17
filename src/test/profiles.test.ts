@@ -155,6 +155,37 @@ describe('profile-aware exports', () => {
 })
 
 describe('structured and adaptive PDF preparation', () => {
+  it('keeps adjacent split glyph items inside the same word', () => {
+    const result = extractStructuredPageText([
+      { str: 'Cop', transform: [1, 0, 0, 1, 50, 700], width: 18, height: 12 },
+      { str: 'y', __bookRefineryRepairedGlyphs: true, transform: [1, 0, 0, 1, 68, 700], width: 6, height: 12 },
+      { str: 'right', transform: [1, 0, 0, 1, 74, 700], width: 25, height: 12 },
+      { str: ' © 2020', transform: [1, 0, 0, 1, 103, 700], width: 40, height: 12 },
+    ], 612)
+
+    expect(result.plain).toBe('Copyright © 2020')
+  })
+
+  it('does not join overlapping text objects merely because one contains a repaired glyph', () => {
+    const result = extractStructuredPageText([
+      {
+        str: 'Company',
+        __bookRefineryRepairedGlyphs: true,
+        transform: [1, 0, 0, 1, 40, 700],
+        width: 220,
+        height: 48,
+      },
+      {
+        str: 'strategyzer.com/invincible',
+        transform: [1, 0, 0, 1, 50, 700],
+        width: 160,
+        height: 12,
+      },
+    ], 612)
+
+    expect(result.plain).toBe('Company strategyzer.com/invincible')
+  })
+
   it('orders two columns separately and promotes large text to a heading', () => {
     const items: unknown[] = [
       { str: 'Chapter title', transform: [1, 0, 0, 1, 50, 760], width: 500, height: 24 },

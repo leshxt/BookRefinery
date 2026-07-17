@@ -1,6 +1,17 @@
 node_modules/
 dist/
+release-artifacts/
+src-tauri/
+# Generated mobile/macOS and store icon variants are not part of Windows/Linux releases.
+desktop/icons/android/
+desktop/icons/ios/
+desktop/icons/*.icns
+desktop/icons/64x64.png
+desktop/icons/icon.png
+desktop/icons/Square*Logo.png
+desktop/icons/StoreLogo.png
 public/ocr/
+tmp/
 coverage/
 *.local
 .DS_Store

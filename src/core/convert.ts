@@ -48,6 +48,8 @@ export interface ConversionSummary {
   readonly processedBytes: number
   readonly outputBytes: number
   readonly ocrPages?: number
+  readonly repairedTextPages?: number
+  readonly repairedGlyphs?: number
   readonly warnings: readonly string[]
 }
 

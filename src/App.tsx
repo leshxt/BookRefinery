@@ -1,4 +1,4 @@
-import { useReducer, useRef, useState, type SVGProps } from 'react'
+import { useEffect, useReducer, useRef, useState, type SVGProps } from 'react'
 import { zipSync } from 'fflate'
 import {
   OUTPUT_PROFILES,
@@ -11,6 +11,8 @@ import {
 import type { ConversionProgress, ConversionResult } from './core/convert'
 import type { SecurityErrorCode } from './core/errors'
 import { formatBytes, SECURITY_POLICY } from './core/policy'
+import { isNativeDesktopRuntime } from './platform'
+import { savePreparedFile } from './save-file'
 import {
   runConversion,
   runInspection,
@@ -61,6 +63,21 @@ type JobAction =
   | { readonly type: 'retry'; readonly id: string }
   | { readonly type: 'remove'; readonly id: string }
   | { readonly type: 'clear-finished' }
+
+interface InstallPromptResult {
+  readonly outcome: 'accepted' | 'dismissed'
+  readonly platform: string
+}
+
+interface AppInstallPromptEvent extends Event {
+  prompt(): Promise<InstallPromptResult>
+}
+
+type DesktopInstallState =
+  | { readonly kind: 'available'; readonly prompt: AppInstallPromptEvent }
+  | { readonly kind: 'installed' }
+  | { readonly kind: 'native' }
+  | { readonly kind: 'browser-menu' }
 
 function jobsReducer(jobs: readonly Job[], action: JobAction): readonly Job[] {
   switch (action.type) {
@@ -156,6 +173,15 @@ function DownloadIcon(props: SVGProps<SVGSVGElement>) {
   )
 }
 
+function SaveIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" {...props}>
+      <path d="M5 3.5h11l3 3v14H5v-17Z" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+      <path d="M8 3.5v6h8v-6M8 20.5v-7h8v7" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
 function GitHubIcon(props: SVGProps<SVGSVGElement>) {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" {...props}>
@@ -189,17 +215,6 @@ function inspectionFor(job: Job): DocumentInspection | null {
   return job.status === 'inspecting' ? null : job.inspection
 }
 
-function triggerDownload(data: Uint8Array, filename: string, type = 'application/zip'): void {
-  const buffer = new ArrayBuffer(data.byteLength)
-  new Uint8Array(buffer).set(data)
-  const url = URL.createObjectURL(new Blob([buffer], { type }))
-  const anchor = document.createElement('a')
-  anchor.href = url
-  anchor.download = filename
-  anchor.click()
-  globalThis.setTimeout(() => URL.revokeObjectURL(url), 1_000)
-}
-
 function jobStatusLabel(job: Job): string {
   switch (job.status) {
     case 'inspecting':
@@ -217,14 +232,54 @@ function jobStatusLabel(job: Job): string {
   }
 }
 
+function isStandaloneApp(): boolean {
+  return window.matchMedia('(display-mode: standalone)').matches
+}
+
+function initialDesktopInstallState(): DesktopInstallState {
+  if (isNativeDesktopRuntime()) return { kind: 'native' }
+  return isStandaloneApp() ? { kind: 'installed' } : { kind: 'browser-menu' }
+}
+
+function outputFormatSummary(profile: OutputProfileId, format: DocumentFormat): string {
+  return [...new Set(profileOutputFiles(profile, format).map((file) => file.format))].join(' · ')
+}
+
 export function App() {
   const [jobs, dispatch] = useReducer(jobsReducer, [])
   const [dragging, setDragging] = useState(false)
   const [profile, setProfile] = useState<OutputProfileId>('notebooklm')
   const [ocrEnabled, setOcrEnabled] = useState(false)
+  const [saveNotice, setSaveNotice] = useState<{
+    readonly kind: 'success' | 'fallback' | 'error'
+    readonly message: string
+  } | null>(null)
+  const [desktopInstall, setDesktopInstall] = useState<DesktopInstallState>(
+    initialDesktopInstallState,
+  )
   const inspectionControllers = useRef(new Map<string, AbortController>())
   const activeConversion = useRef<AbortController | null>(null)
   const stopBatch = useRef(false)
+
+  useEffect(() => {
+    if (isNativeDesktopRuntime()) return
+
+    const captureInstallPrompt = (event: Event): void => {
+      event.preventDefault()
+      setDesktopInstall({
+        kind: 'available',
+        prompt: event as AppInstallPromptEvent,
+      })
+    }
+    const markInstalled = (): void => setDesktopInstall({ kind: 'installed' })
+
+    window.addEventListener('beforeinstallprompt', captureInstallPrompt)
+    window.addEventListener('appinstalled', markInstalled)
+    return () => {
+      window.removeEventListener('beforeinstallprompt', captureInstallPrompt)
+      window.removeEventListener('appinstalled', markInstalled)
+    }
+  }, [])
 
   const batchRunning = jobs.some((job) => job.status === 'queued' || job.status === 'running')
   const readyJobs = jobs.filter((job): job is Extract<Job, { status: 'ready' }> => job.status === 'ready')
@@ -336,6 +391,14 @@ export function App() {
     dispatch({ type: 'unqueue' })
   }
 
+  const requestDesktopInstall = async (): Promise<void> => {
+    if (desktopInstall.kind !== 'available') return
+    const result = await desktopInstall.prompt.prompt()
+    setDesktopInstall(result.outcome === 'accepted'
+      ? { kind: 'installed' }
+      : { kind: 'browser-menu' })
+  }
+
   const retryJob = (job: Extract<Job, { status: 'error' }>): void => {
     dispatch({ type: 'retry', id: job.id })
     if (!job.inspection) {
@@ -348,14 +411,33 @@ export function App() {
     dispatch({ type: 'remove', id: job.id })
   }
 
-  const downloadAll = (): void => {
+  const saveArchive = async (data: Uint8Array, filename: string): Promise<void> => {
+    setSaveNotice(null)
+    try {
+      const result = await savePreparedFile(data, filename)
+      if (result === 'cancelled') return
+      setSaveNotice(result === 'browser-download'
+        ? {
+            kind: 'fallback',
+            message: 'Your browser does not support Save As here, so it saved the file to its download folder.',
+          }
+        : { kind: 'success', message: `Saved ${filename}.` })
+    } catch {
+      setSaveNotice({
+        kind: 'error',
+        message: 'The prepared file could not be saved. It remains available in this queue.',
+      })
+    }
+  }
+
+  const saveAll = async (): Promise<void> => {
     if (successfulJobs.length === 0) return
     const files: Record<string, Uint8Array> = {}
     for (const [index, job] of successfulJobs.entries()) {
       const prefix = String(index + 1).padStart(2, '0')
       files[`${prefix}-${job.result.filename}`] = job.result.archive
     }
-    triggerDownload(
+    await saveArchive(
       zipSync(files, { level: 0, mtime: new Date('2026-01-01T00:00:00Z') }),
       'bookrefinery-prepared-books.zip',
     )
@@ -380,7 +462,23 @@ export function App() {
             <GitHubIcon /><span>by <strong translate="no">leshxt</strong></span>
           </a>
         </div>
-        <div className="local-badge"><span aria-hidden="true" />100% local</div>
+        <div className="topbar-actions">
+          {desktopInstall.kind === 'available' && (
+            <button className="install-shortcut" type="button" onClick={() => void requestDesktopInstall()}>
+              <DownloadIcon /> Install app
+            </button>
+          )}
+          {desktopInstall.kind === 'installed' && (
+            <span className="install-shortcut is-installed"><DownloadIcon /> Installed</span>
+          )}
+          {desktopInstall.kind === 'native' && (
+            <span className="install-shortcut is-installed"><DownloadIcon /> Desktop build</span>
+          )}
+          {desktopInstall.kind === 'browser-menu' && (
+            <a className="install-shortcut" href="#desktop-install"><DownloadIcon /> Desktop app</a>
+          )}
+          <div className="local-badge"><span aria-hidden="true" />Files stay local</div>
+        </div>
       </header>
 
       <main id="main">
@@ -422,46 +520,100 @@ export function App() {
           </div>
         </section>
 
+        <aside className="desktop-install" id="desktop-install" aria-labelledby="desktop-install-title">
+          <span className="desktop-install-mark"><DownloadIcon /></span>
+          <div>
+            <strong id="desktop-install-title">
+              {desktopInstall.kind === 'native'
+                ? 'Native desktop edition'
+                : 'Install or download BookRefinery'}
+            </strong>
+            <p>
+              {desktopInstall.kind === 'native'
+                ? 'Bundled runtime, remote requests blocked, and a native Save As dialog.'
+                : 'Use the Chrome/Edge web install, or download the native Windows and Linux editions.'}
+            </p>
+          </div>
+          {desktopInstall.kind === 'available' && (
+            <div className="desktop-install-actions">
+              <button type="button" onClick={() => void requestDesktopInstall()}>Install browser app</button>
+              <a href="https://github.com/leshxt/BookRefinery/releases" target="_blank" rel="noopener noreferrer">
+                Native downloads
+              </a>
+            </div>
+          )}
+          {desktopInstall.kind === 'installed' && <span className="desktop-install-state">Installed</span>}
+          {desktopInstall.kind === 'native' && (
+            <span className="desktop-install-state">Native · network blocked</span>
+          )}
+          {desktopInstall.kind === 'browser-menu' && (
+            <div className="desktop-install-actions">
+              <span className="desktop-install-help">Firefox: use a native build</span>
+              <a href="https://github.com/leshxt/BookRefinery/releases" target="_blank" rel="noopener noreferrer">
+                Windows &amp; Linux
+              </a>
+            </div>
+          )}
+        </aside>
+
         <section className="studio-card" id="workspace" aria-labelledby="workspace-title">
           <div className="studio-heading">
             <div>
               <p className="section-label">Private Workspace</p>
               <h2 id="workspace-title">Prepare Your Sources</h2>
             </div>
-            <span className="limit-label">12 files · 80 MB each</span>
+            <span className="limit-label">{SECURITY_POLICY.maxBatchFiles} files · 80 MB each</span>
           </div>
 
           <fieldset className="profile-picker" disabled={batchRunning}>
             <legend>
               <span className="step-number">01</span>
               Choose an output profile
-              <small>Shown for {focusFormat.toUpperCase()} · every listed path is inside the downloaded ZIP.</small>
+              <small>
+                Recommended: NotebookLM · RAG adds chunks · Markdown is smallest · Archive includes everything.
+                Exact files shown for {focusFormat.toUpperCase()}.
+              </small>
             </legend>
             <div className="profile-grid">
               {OUTPUT_PROFILES.map((candidate) => {
                 const selected = profile === candidate.id
+                const outputFiles = profileOutputFiles(candidate.id, focusFormat)
                 return (
-                  <label className={`profile-card ${selected ? 'is-selected' : ''}`} key={candidate.id}>
-                    <input
-                      type="radio"
-                      name="output-profile"
-                      value={candidate.id}
-                      checked={selected}
-                      onChange={() => setProfile(candidate.id)}
-                    />
-                    <span className="profile-check" aria-hidden="true">{selected ? '✓' : ''}</span>
-                    <strong>{candidate.name}</strong>
-                    <span className="profile-summary">{candidate.summary}</span>
-                    <ul className="output-file-list">
-                      {profileOutputFiles(candidate.id, focusFormat).map((file) => (
-                        <li key={file.path}>
-                          <code>{file.path}</code>
-                          <span>{file.format}{file.optional ? ' · if available' : ''}</span>
-                          <small>{file.description}</small>
-                        </li>
-                      ))}
-                    </ul>
-                  </label>
+                  <article className={`profile-card ${selected ? 'is-selected' : ''}`} key={candidate.id}>
+                    <label className="profile-choice">
+                      <input
+                        type="radio"
+                        name="output-profile"
+                        value={candidate.id}
+                        checked={selected}
+                        onChange={() => setProfile(candidate.id)}
+                      />
+                      <span className="profile-check" aria-hidden="true">{selected ? '✓' : ''}</span>
+                      <strong>
+                        {candidate.name}
+                        {'recommended' in candidate && candidate.recommended && (
+                          <span className="recommended-tag">Recommended</span>
+                        )}
+                      </strong>
+                      <span className="profile-summary">{candidate.summary}</span>
+                      <span className="profile-difference">{candidate.difference}</span>
+                      <small className="profile-formats">
+                        <span>Formats</span> {outputFormatSummary(candidate.id, focusFormat)}
+                      </small>
+                    </label>
+                    <details className="profile-details">
+                      <summary>View exact files <span>{outputFiles.length}</span></summary>
+                      <ul className="output-file-list">
+                        {outputFiles.map((file) => (
+                          <li key={file.path}>
+                            <code>{file.path}</code>
+                            <span>{file.format}{file.optional ? ' · if available' : ''}</span>
+                            <small>{file.description}</small>
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  </article>
                 )
               })}
             </div>
@@ -486,7 +638,7 @@ export function App() {
           </div>
 
           <div className="upload-heading">
-            <div><span className="step-number">03</span><strong>Add up to 12 ebooks</strong></div>
+            <div><span className="step-number">03</span><strong>Add up to {SECURITY_POLICY.maxBatchFiles} ebooks</strong></div>
             {jobs.length > 0 && <span>{jobs.length} / {SECURITY_POLICY.maxBatchFiles}</span>}
           </div>
           <label
@@ -584,8 +736,8 @@ export function App() {
                           <span><strong>{job.result.summary.ocrPages ?? 0}</strong>OCR pages</span>
                           <span><strong>{formatBytes(job.result.summary.outputBytes)}</strong>ZIP</span>
                         </div>
-                        <button type="button" onClick={() => triggerDownload(job.result.archive, job.result.filename)}>
-                          <DownloadIcon /> {job.result.filename}
+                        <button type="button" onClick={() => void saveArchive(job.result.archive, job.result.filename)}>
+                          <SaveIcon /> Save as…
                         </button>
                         {job.result.summary.warnings.length > 0 && (
                           <details className="warnings">
@@ -608,11 +760,19 @@ export function App() {
                   </button>
                 )}
                 {successfulJobs.length > 1 && (
-                  <button className="secondary-button" type="button" onClick={downloadAll}>
-                    <DownloadIcon /> Download all prepared books
+                  <button className="secondary-button" type="button" onClick={() => void saveAll()}>
+                    <SaveIcon /> Save all as…
                   </button>
                 )}
               </div>
+              {saveNotice && (
+                <p
+                  className={`save-notice save-notice-${saveNotice.kind}`}
+                  role={saveNotice.kind === 'error' ? 'alert' : 'status'}
+                >
+                  {saveNotice.message}
+                </p>
+              )}
             </div>
           )}
         </section>
