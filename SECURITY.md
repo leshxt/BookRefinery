@@ -12,25 +12,25 @@ is impossible.
 
 ### Native desktop wrapper
 
-- Windows and Linux packages use a minimal Tauri wrapper around the same production web build.
-- The Rust layer registers no custom commands and loads no file-system, shell, network, dialog,
-  updater, telemetry, or storage plugin.
-- The Tauri capability list is explicitly empty. The frontend receives no native file or process
-  permissions through IPC.
-- HTML5 drag and drop is kept enabled on Windows by disabling Tauri's native file-drop interception;
-  selected files still arrive as bounded browser `File` objects.
-- The service worker is not registered inside the native wrapper. All executable app assets are
-  bundled with the installer.
-- The Windows WebView2 instance requests disabled background networking, DNS prefetching, component
-  updates, crash reporting, domain reliability, sync, first-run traffic, metrics upload, and
-  hyperlink auditing. Host resolution is mapped to failure and an unreachable loopback proxy is
-  configured as additional defense in depth. Bundled custom-protocol resources do not need DNS or
-  the proxy.
-- Those WebView2 command-line switches are not a complete network security boundary. In a live
-  Windows test, the current shared WebView2 runtime still contacted Microsoft's Experimentation and
-  Configuration Service during startup. The app CSP independently rejects frontend requests, no
-  document bytes are passed to the runtime service, and BookRefinery does not modify machine-wide
-  WebView2 policy or firewall settings.
+- Windows and Linux packages bundle a dedicated Electron/Chromium runtime around the same production
+  web build. They do not depend on Microsoft WebView2 or the host's WebKit installation.
+- The renderer is sandboxed, has Node integration disabled, uses context isolation, loads only a
+  packaged secure custom protocol, and runs in a private non-persistent session with its cache disabled.
+- The session rejects every request except packaged `bookrefinery://app` resources and in-memory
+  blobs. HTTP, HTTPS, WebSocket, FTP, file, and unknown schemes are canceled.
+- Chromium background networking, component updates, phishing services, domain reliability, sync,
+  first-run traffic, metrics upload, hyperlink auditing, optimization hints, translation, and media
+  routing are disabled. DNS resolution is mapped to failure and an unreachable loopback proxy is an
+  additional defense-in-depth boundary.
+- Every permission request and check is denied. New windows and navigation are blocked; only exact
+  BookRefinery/author GitHub links may be handed to the user's external browser after an explicit click.
+- The only native renderer bridge is `bookrefinery:save-file`. Both preload and main process validate
+  a generated ZIP, enforce the 300 MB output limit, restrict the suggested name to a safe basename,
+  validate the IPC sender, and show an operating-system Save As dialog before writing.
+- Electron fuses disable `RunAsNode`, `NODE_OPTIONS`, and CLI inspection, require the packaged ASAR,
+  validate embedded ASAR integrity, and enable cookie encryption.
+- The service worker is not registered inside the desktop edition. There is no updater, telemetry,
+  crash reporter, remote code, or backend.
 - Release actions are pinned to exact commits. Windows and Linux builds are produced independently
   on their native GitHub-hosted runners.
 
@@ -42,7 +42,8 @@ is impossible.
   watchdog; opt-in OCR has a separate bounded timeout because language initialization is heavier.
 - Input is capped at 80 MB and generated output at 300 MB.
 - Untrusted HTML/Markdown is never rendered; the UI preview is plain text.
-- The production CSP blocks `connect`, frames, objects, forms and non-local scripts.
+- The production CSP permits connections only to bundled same-origin/blob OCR assets and blocks
+  frames, objects, forms, non-local scripts, and every remote origin.
 - External and executable URL schemes are removed from Markdown output.
 
 ### EPUB
@@ -88,6 +89,9 @@ is impossible.
 - Every page is flattened to JPEG and embedded in a newly created PDF, then paired with an invisible
   searchable Unicode layer rebuilt from locally extracted text. No source font or content object is copied.
   If every page cannot be rendered within the limits, no partial sanitized PDF is exported.
+- When a source font has an incomplete Unicode table, BookRefinery conservatively repairs only known
+  characters from that embedded font's own glyph-name differences. Unknown glyph names remain untouched;
+  repaired page and character counts are written to the security report.
 - Optional OCR runs only on pages without useful extracted text. English and German worker, core and
   language assets ship with the app and are loaded from the same origin; no OCR service or CDN is used.
 - OCR is capped at 30 attempted pages, 4.5 million pixels per page and 90 million pixels in total.
@@ -97,19 +101,13 @@ is impossible.
 
 - A Web Worker provides termination and UI isolation, but browsers do not expose a strict
   per-worker memory quota.
-- A native wrapper adds the operating system WebView and Tauri runtime to the trusted computing
-  base. Keeping IPC capabilities empty limits the impact, but does not remove WebView, Rust, build
-  pipeline, or installer vulnerabilities.
-- On Windows, the shared WebView2 runtime may make its own Microsoft configuration request even
-  though BookRefinery's application code has no network capability. This is separate from document
-  processing and means the native process tree should not be described as physically offline.
+- The desktop installer is substantially larger because Electron/Chromium is bundled. That dedicated
+  runtime joins the trusted computing base and must be updated with security releases.
+- Runtime request denial and Chromium background-networking switches are application boundaries, not
+  an operating-system firewall. Release testing therefore also inspects the complete BookRefinery
+  process tree for external sockets.
 - Community Windows installers are currently unsigned and may trigger SmartScreen. GitHub release
   assets should be downloaded only from the official repository and verified before execution.
-- The current Tauri Linux dependency graph inherits informational RustSec warnings for unmaintained
-  GTK3 Rust bindings and `RUSTSEC-2024-0429` in `glib 0.18`. The affected
-  `VariantStrIter` API is not called by BookRefinery or the downloaded Tauri dependency sources, but
-  it remains part of the Linux trusted computing base until Tauri's WebKitGTK stack migrates. CI
-  reports informational advisories and fails on vulnerability advisories.
 - PDF text order is heuristic because PDF stores positioned glyphs rather than semantic blocks.
 - OCR is opt-in and may contain recognition errors. It does not replace extractable source text and
   currently supports the bundled English and German models only.

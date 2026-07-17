@@ -6,6 +6,9 @@ interface PageToken {
   readonly y: number
   readonly width: number
   readonly height: number
+  readonly leadingSpace: boolean
+  readonly trailingSpace: boolean
+  readonly repairedGlyphs: boolean
 }
 
 interface PageLine {
@@ -62,7 +65,8 @@ function toTokens(items: readonly unknown[]): PageToken[] {
   const tokens: PageToken[] = []
   for (const item of items) {
     if (!isRecord(item) || typeof item['str'] !== 'string') continue
-    const text = safePlainText(item['str'])
+    const sourceText = item['str']
+    const text = safePlainText(sourceText)
     if (!text) continue
     const x = numberAt(item['transform'], 4) ?? 0
     const y = numberAt(item['transform'], 5) ?? 0
@@ -74,7 +78,16 @@ function toTokens(items: readonly unknown[]): PageToken[] {
     const width = typeof rawWidth === 'number' && Number.isFinite(rawWidth) && rawWidth >= 0
       ? rawWidth
       : text.length * height * 0.48
-    tokens.push({ text, x, y, width, height })
+    tokens.push({
+      text,
+      x,
+      y,
+      width,
+      height,
+      leadingSpace: /^\s/u.test(sourceText),
+      trailingSpace: /\s$/u.test(sourceText),
+      repairedGlyphs: item['__bookRefineryRepairedGlyphs'] === true,
+    })
   }
   return tokens
 }
@@ -110,7 +123,20 @@ function groupLines(tokens: readonly PageToken[]): PageLine[] {
       }
     }
     return segments.map((segment) => ({
-      text: segment.reduce((line, token) => addToken(line, token.text), ''),
+      text: segment.reduce((line, token, index) => {
+        const previous = segment[index - 1]
+        if (!previous) return token.text
+        const gap = token.x - (previous.x + previous.width)
+        const touchTolerance = Math.max(1.5, Math.min(previous.height, token.height) * 0.16)
+        const touchesPreviousGlyph = (
+          (previous.repairedGlyphs || token.repairedGlyphs) &&
+          !previous.trailingSpace &&
+          !token.leadingSpace &&
+          gap >= -touchTolerance &&
+          gap <= touchTolerance
+        )
+        return touchesPreviousGlyph ? `${line}${token.text}` : addToken(line, token.text)
+      }, ''),
       x: Math.min(...segment.map((token) => token.x)),
       endX: Math.max(...segment.map((token) => token.x + token.width)),
       y: segment.reduce((sum, token) => sum + token.y, 0) / segment.length,

@@ -23,6 +23,8 @@ export interface OutputProfile {
   readonly id: OutputProfileId
   readonly name: string
   readonly summary: string
+  readonly difference: string
+  readonly recommended?: boolean
 }
 
 export interface DocumentInspection {
@@ -46,22 +48,27 @@ export const OUTPUT_PROFILES = [
   {
     id: 'notebooklm',
     name: 'NotebookLM',
-    summary: 'One primary multimodal source, import guidance, visual fallbacks, and safety reports.',
+    summary: 'One upload-ready visual source plus an optional Markdown fallback.',
+    difference: 'Best default for NotebookLM and multimodal chat.',
+    recommended: true,
   },
   {
     id: 'rag',
     name: 'RAG / Knowledge Base',
-    summary: 'Chunkable Markdown, stable page or chapter files, graphics, indexes, and machine metadata.',
+    summary: 'Adds page or chapter chunks, indexes, and machine-readable structure.',
+    difference: 'Choose this when a retrieval pipeline indexes separate files.',
   },
   {
     id: 'markdown',
-    name: 'Readable Markdown',
-    summary: 'A compact human-readable Markdown document with contextual graphics and safety records.',
+    name: 'Markdown Package',
+    summary: 'The smallest readable bundle: one Markdown file plus its visual companion.',
+    difference: 'Choose this for editing, Git, Obsidian, or simple text workflows.',
   },
   {
     id: 'archive',
     name: 'Safe Archive',
-    summary: 'Every sanitized representation and supporting file in one reproducible bundle.',
+    summary: 'Every sanitized representation and supporting file in one bundle.',
+    difference: 'Best for preservation, but unnecessarily large for a direct LLM upload.',
   },
 ] as const satisfies readonly OutputProfile[]
 

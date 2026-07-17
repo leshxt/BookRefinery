@@ -8,7 +8,6 @@ on:
 
 permissions:
   contents: write
-  checks: write
 
 concurrency:
   group: desktop-release-${{ github.ref }}
@@ -17,7 +16,7 @@ concurrency:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - name: Check out repository
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -31,17 +30,8 @@ jobs:
       - name: Install exact dependencies
         run: npm ci
 
-      - name: Set up stable Rust
-        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
-
-      - name: Audit Rust dependencies
-        uses: rustsec/audit-check@69366f33c96575abad1ee0dba8212993eecbe998 # v2.0.0
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          working-directory: src-tauri
-
-      - name: Test, build and audit
-        run: npm run verify
+      - name: Test, build, audit, and check the desktop boundary
+        run: npm run verify:desktop
 
   bundle:
     needs: verify
@@ -51,9 +41,11 @@ jobs:
       matrix:
         include:
           - platform: windows-latest
-            bundles: nsis
+            command: desktop:build:windows
+            artifact: windows
           - platform: ubuntu-22.04
-            bundles: appimage,deb
+            command: desktop:build:linux
+            artifact: linux
 
     runs-on: ${{ matrix.platform }}
     steps:
@@ -66,36 +58,41 @@ jobs:
           node-version: 24
           cache: npm
 
-      - name: Set up stable Rust
-        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
-
-      - name: Install Linux system dependencies
-        if: matrix.platform == 'ubuntu-22.04'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf xdg-utils
-
-      - name: Install exact frontend dependencies
+      - name: Install exact dependencies
         run: npm ci
 
-      - name: Build and publish native bundles
-        uses: tauri-apps/tauri-action@2d793bf2c8c505b9b76211601b09aab48922225d # v1.0.0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tagName: desktop-v__VERSION__
-          releaseName: BookRefinery Desktop v__VERSION__
-          releaseBody: |
-            Native BookRefinery desktop packages.
+      - name: Build offline desktop package
+        run: npm run ${{ matrix.command }}
 
-            - Windows: use the `setup.exe` installer.
-            - Linux: use the AppImage or the Debian package.
-            - Documents are processed locally and are never uploaded. No app updater, telemetry, or native file-system API is enabled.
-            - On Windows, the shared WebView2 runtime may still contact Microsoft's configuration service; see SECURITY.md.
-            - These first community builds are not code-signed; verify the checksums GitHub shows before running them.
-          releaseDraft: false
-          prerelease: true
-          uploadUpdaterJson: false
-          uploadUpdaterSignatures: false
-          releaseAssetNamePattern: "[name]_[version]_[platform]_[arch][setup][ext]"
-          args: --bundles ${{ matrix.bundles }}
+      - name: Upload installer artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bookrefinery-${{ matrix.artifact }}
+          path: |
+            release-artifacts/*.exe
+            release-artifacts/*.AppImage
+            release-artifacts/*.deb
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/desktop-v')
+    needs: bundle
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download native packages
+        uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
+        with:
+          pattern: bookrefinery-*
+          path: release-artifacts
+          merge-multiple: true
+
+      - name: Publish prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" release-artifacts/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "BookRefinery Desktop ${GITHUB_REF_NAME#desktop-v}" \
+            --prerelease \
+            --notes "Bundled Windows and Linux editions. No WebView2 dependency, updater, telemetry, or application network access. The dedicated renderer is sandboxed and every remote request is denied. The app is unsigned; verify that the asset comes from this repository."

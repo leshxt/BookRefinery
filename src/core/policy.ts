@@ -18,7 +18,7 @@ export const SECURITY_POLICY = {
   maxVisualPdfPages: 500,
   maxVisualPdfPixels: 240_000_000,
   maxPdfSourceImagePixels: 20_000_000,
-  maxBatchFiles: 12,
+  maxBatchFiles: 20,
   maxOcrPages: 30,
   maxOcrPixels: 90_000_000,
   maxOcrPagePixels: 4_500_000,

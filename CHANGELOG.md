@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+- Replaced the Windows WebView2/Tauri wrapper with a bundled Electron runtime whose private session
+  blocks every remote renderer request, disables background networking and updates, denies permissions,
+  uses hardened Electron fuses, and exposes only a bounded user-mediated Save As bridge.
+- Added real Save As behavior to the desktop edition and supporting Chromium browsers, plus a clearly
+  reported download-folder fallback where the File System Access API is unavailable.
+- Increased the bounded batch queue from 12 to 20 books while retaining sequential isolated conversion.
+- Simplified output-profile explanations, marked NotebookLM as the recommended default, and clarified
+  that RAG adds chunks, Markdown is the smallest package, and Archive includes every representation.
+- Repaired incomplete embedded PDF Unicode maps deterministically from embedded glyph names, recorded
+  repair counts in reports, and allowed bundled same-origin OCR assets through the otherwise closed CSP.
+- Added the concrete PDF font-map regression corpus, native request/save policy tests, and Electron
+  Windows/Linux packaging workflow.
+
 ## 0.4.0 - 2026-07-17
 
 - Renamed the project from Book2Markdown to BookRefinery across the app, package, generated

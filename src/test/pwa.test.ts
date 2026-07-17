@@ -42,13 +42,13 @@ describe('installable offline application contract', () => {
     expect(ocrSync).toContain("tesseract.js-core")
   })
 
-  it('keeps the production document network-closed while allowing local workers and manifests', async () => {
+  it('allows only bundled same-origin OCR requests while keeping remote origins closed', async () => {
     const config = await resolveConfig({ root }, 'build')
     const transform = config.plugins.find((plugin) => plugin.name === 'bookrefinery-csp')
 
     expect(transform).toBeDefined()
     const configSource = await readFile(fileURLToPath(new URL('../../vite.config.ts', import.meta.url)), 'utf8')
-    expect(configSource).toContain("\"connect-src 'none'\"")
+    expect(configSource).toContain("\"connect-src 'self' blob:\"")
     expect(configSource).toContain("\"worker-src 'self' blob:\"")
     expect(configSource).toContain("\"manifest-src 'self'\"")
   })

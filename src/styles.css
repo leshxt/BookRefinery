@@ -168,8 +168,10 @@ main { padding-bottom: 90px; }
 .profile-card:has(input:focus-visible) { outline: 2px solid white; outline-offset: 3px; }
 .profile-check { position: absolute; top: 17px; right: 17px; width: 22px; height: 22px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 50%; color: var(--ink); background: transparent; font-size: .72rem; }
 .profile-card.is-selected .profile-check { border-color: var(--mint); background: var(--mint); }
-.profile-choice > strong { display: block; padding-right: 30px; font-size: .98rem; }
+.profile-choice > strong { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; padding-right: 30px; font-size: .98rem; }
+.recommended-tag { padding: 3px 6px; border: 1px solid rgba(88,240,177,.3); border-radius: 999px; color: var(--mint); background: rgba(88,240,177,.06); font: 650 .54rem ui-monospace, monospace; letter-spacing: .04em; text-transform: uppercase; }
 .profile-summary { display: block; margin-top: 7px; color: var(--muted); font-size: .75rem; line-height: 1.5; }
+.profile-difference { display: block; margin-top: 5px; color: #c7ddd3; font-size: .67rem; line-height: 1.45; }
 .profile-formats { display: block; margin-top: 9px; color: #9fc4b3; font: 600 .62rem/1.45 ui-monospace, monospace; letter-spacing: .025em; }
 .profile-formats > span { margin-right: 5px; color: var(--mint); text-transform: uppercase; }
 .profile-details { border-top: 1px solid var(--line); }
@@ -239,6 +241,9 @@ main { padding-bottom: 90px; }
 .secondary-button:hover { border-color: rgba(88,240,177,.35); color: white; }
 .secondary-button svg { width: 19px; }
 .primary-button:disabled, .secondary-button:disabled { opacity: .42; cursor: not-allowed; transform: none; }
+.save-notice { margin: 10px 0 0; padding: 10px 12px; border-radius: 9px; color: #c7ddd3; background: rgba(88,240,177,.06); font-size: .72rem; line-height: 1.45; }
+.save-notice-fallback { color: #d7c79f; background: rgba(201,158,58,.08); }
+.save-notice-error { color: #e1aaa5; background: rgba(145,44,39,.12); }
 
 .security-grid { display: grid; grid-template-columns: 1.25fr repeat(3, 1fr); gap: 1px; margin-top: 90px; border: 1px solid var(--line); border-radius: 22px; overflow: hidden; background: var(--line); }
 .security-grid > * { min-height: 270px; padding: 30px; background: #0a1512; }

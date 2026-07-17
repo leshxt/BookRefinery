@@ -20,7 +20,8 @@ remote resources, forms, attachments, and active markup do not enter the prepare
 
 Preflight runs in a disposable worker before conversion. It reports format, title, page or chapter
 count, graphics, text coverage, decompressed size, warnings, and whether local OCR is recommended.
-Up to 12 books can then be processed sequentially, each with independent limits and cancellation.
+Up to 20 books can then be queued and processed sequentially, each with independent limits and
+cancellation. Sequential conversion keeps large PDF batches from exhausting memory.
 
 ## Output profiles
 
@@ -45,7 +46,7 @@ second default upload, which avoids duplicate passages and competing citations.
 - sanitized `assets/*` plus the figure index for EPUB/FB2
 - LLM-safety report, security report, and `EXPORT-MANIFEST.json`
 
-### Readable Markdown
+### Markdown Package
 
 - one canonical `book.md` or `document.md`
 - contextual sanitized graphics for EPUB/FB2
@@ -70,6 +71,11 @@ OCR is bounded to 30 pages, 90 million pixels, 4.5 million pixels per page, and 
 worker timeout. Recognition is probabilistic: verify important passages against the preserved page
 image.
 
+Before OCR, BookRefinery also repairs incomplete embedded PDF font maps from their local glyph names.
+This recovers deterministic character mappings such as stylistic alternate letters without guessing
+or rasterizing otherwise extractable text. The generated security report records repaired pages and
+character counts.
+
 ## Start the app
 
 Install [Node.js 24](https://nodejs.org/) and run:
@@ -88,19 +94,18 @@ Open the local URL printed by Vite, normally `http://localhost:5173`.
 Native packages are published on the
 [GitHub Releases page](https://github.com/leshxt/BookRefinery/releases):
 
-- **Windows:** download the `BookRefinery_..._windows_...-setup.exe` NSIS installer.
+- **Windows:** download the `BookRefinery-...-win-x64.exe` NSIS installer.
 - **Linux:** download the `.AppImage` for a portable launch or the `.deb` package for Debian/Ubuntu.
 
-The native build uses the operating system WebView and deliberately exposes no Tauri file-system,
-shell, network, updater, or custom command capabilities. Files still enter through the browser File
-API and all document processing remains in the existing disposable workers. The initial community
-packages are not code-signed, so Windows may display a SmartScreen warning.
+The desktop edition bundles its own current Electron/Chromium runtime instead of using Microsoft
+WebView2. Its private renderer session denies every remote request, DNS is mapped to failure,
+background networking and component updates are disabled, and there is no app updater, telemetry,
+remote code, or backend. The only native renderer bridge opens a user-triggered **Save As** dialog
+for a bounded generated ZIP. Document parsing still runs in the same disposable sandboxed workers.
 
-On Windows, the shared Microsoft WebView2 runtime may independently contact Microsoft's
-Experimentation and Configuration Service during startup. BookRefinery's frontend CSP still blocks
-application-originated network requests, and document bytes are never uploaded. This runtime
-exception and the best-effort background-traffic reductions are documented in
-[SECURITY.md](SECURITY.md).
+This makes the installer larger than the former WebView wrapper, but it gives BookRefinery control
+over the exact runtime and removes the observed WebView2 configuration request. The initial community
+packages are not code-signed, so Windows may display a SmartScreen warning.
 
 For Chrome and Edge, BookRefinery also remains installable as an offline-capable PWA. Build and serve
 the web production version:
@@ -118,21 +123,19 @@ icon.
 The production build generates a versioned service worker that precaches the complete app, PDF
 runtime, OCR worker, WebAssembly core, and English/German language data for subsequent offline use.
 
-To build the native package from source, install the current Rust toolchain and the
-[Tauri platform prerequisites](https://v2.tauri.app/start/prerequisites/), then run:
+To build the native package from source:
 
 ```powershell
 npm ci
 npm run desktop:build:windows
 ```
 
-For a local RustSec dependency scan, install `cargo-audit` and run `npm run desktop:audit`.
-GitHub CI performs the same audit automatically and fails on vulnerability advisories.
+Use `npm run desktop:build:linux` on Linux. `npm run verify:desktop` checks the web application,
+desktop request/save boundary, production build, and all npm dependencies.
 
-Linux bundles are built on Ubuntu 22.04 in the release workflow because AppImage compatibility
-depends on the build system's glibc and WebKitGTK baseline. Pushing a `desktop-v*` tag, or manually
-starting **Build desktop installers**, creates a prerelease with the Windows NSIS installer, Linux
-AppImage, and Debian package.
+Linux bundles are built on Ubuntu 22.04 in the release workflow for a stable glibc baseline.
+Pushing a `desktop-v*` tag, or manually starting **Build desktop installers**, creates a prerelease
+with the Windows NSIS installer, Linux AppImage, and Debian package.
 
 ## Security model
 
@@ -149,6 +152,7 @@ BookRefinery treats every input as hostile:
 - raster images are signature-checked and SVG is allowlist-sanitized;
 - untrusted book HTML or Markdown is never rendered in the application;
 - the production document CSP blocks connections and active embedding;
+- the desktop renderer additionally rejects non-packaged requests before the network stack can use them;
 - every result contains security records and a SHA-256 output inventory.
 
 See [SECURITY.md](SECURITY.md) for the threat model and
@@ -168,7 +172,7 @@ high-severity production dependency audit. The test corpus includes deterministi
 inputs, archive traversal, XML entities, prompt-injection-like book passages, profile contracts,
 manifest checksums, PDF text extraction, Unicode searchable PDFs, and layout heuristics.
 
-Native changes additionally run a locked Rust compile and RustSec audit in CI.
+Native changes additionally run syntax, request-policy, IPC/save-boundary, and dependency checks in CI.
 
 ## Project history
 

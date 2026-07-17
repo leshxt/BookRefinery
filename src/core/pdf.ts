@@ -20,6 +20,7 @@ import type { ConversionProgress, ConversionResult, ConversionSummary } from './
 import { SecurityError } from './errors'
 import { LocalOcrSession } from './ocr'
 import { safeOutputName } from './path'
+import { repairPdfTextItems } from './pdf-font-repair'
 import { extractStructuredPageText } from './pdf-layout'
 import { SECURITY_POLICY } from './policy'
 import { SearchablePdfBuilder } from './visual-pdf'
@@ -204,6 +205,10 @@ function metadataText(info: unknown, key: string): string | undefined {
 }
 
 function reportMarkdown(summary: ConversionSummary, sourceName: string): string {
+  const preparationWarnings = summary.warnings.length > 0
+    ? summary.warnings.map((warning) => `- ${safeMarkdownText(warning)}`).join('\n')
+    : '- None.'
+
   return `# Security report
 
 - Source: ${safeMarkdownText(sourceName)}
@@ -215,6 +220,8 @@ function reportMarkdown(summary: ConversionSummary, sourceName: string): string 
 - Original forms, attachments, annotations, links, and scripts copied: no
 - Page appearance rebuilt from local raster rendering: ${summary.assets > 0 ? 'yes' : 'no'}
 - Searchable text layer rebuilt from locally extracted page text: ${summary.assets > 0 ? 'yes' : 'no'}
+- Pages with repaired embedded font mappings: ${summary.repairedTextPages ?? 0}
+- Characters recovered from embedded glyph names: ${summary.repairedGlyphs ?? 0}
 - Pages recovered with bundled local OCR: ${summary.ocrPages ?? 0}
 - Sanitized PDF companion: ${summary.assets > 0 ? 'notebooklm/document.sanitized.pdf' : 'not produced; see warnings'}
 - Text output rendered as active HTML: no
@@ -232,6 +239,10 @@ function reportMarkdown(summary: ConversionSummary, sourceName: string): string 
 - OCR pixels: 90 million
 - Isolated conversion worker: 120 seconds; opt-in OCR: 10 minutes
 
+## Preparation warnings
+
+${preparationWarnings}
+
 ## Limitations
 
 PDF stores layout rather than semantic document structure. The sanitized companion preserves page
@@ -241,6 +252,40 @@ separate page and pixel limits; OCR text remains probabilistic and should be che
 
 The hardening substantially reduces common risks, but it is not a mathematical security guarantee.
 `
+}
+
+async function repairedPageItems(
+  page: PDFPageProxy,
+  items: readonly unknown[],
+): Promise<{
+  readonly items: readonly unknown[]
+  readonly repairedFonts: number
+  readonly repairedGlyphs: number
+}> {
+  const fontNames = new Set<string>()
+  for (const item of items) {
+    if (isRecord(item) && typeof item['fontName'] === 'string') fontNames.add(item['fontName'])
+  }
+  if (fontNames.size === 0) return { items, repairedFonts: 0, repairedGlyphs: 0 }
+
+  await page.getOperatorList({ annotationMode: AnnotationMode.DISABLE })
+  return repairPdfTextItems(items, (fontName) => {
+    try {
+      const font: unknown = page.commonObjs.get(fontName)
+      return font
+    } catch {
+      return undefined
+    }
+  })
+}
+
+function safeOcrFailureReason(error: unknown): string {
+  if (!(error instanceof Error)) return 'unknown local runtime error'
+  const message = error.message
+    .replace(/\b(?:file|https?|blob):[^\s)]+/giu, '[local asset]')
+    .replace(/\s+/gu, ' ')
+    .trim()
+  return message.slice(0, 180) || error.name
 }
 
 function notebookReadme(title: string): string {
@@ -300,7 +345,7 @@ async function renderSearchablePdf(
     CanvasFactory: WorkerCanvasFactory,
     FilterFactory: NoopFilterFactory,
     disableFontFace: true,
-    fontExtraProperties: false,
+    fontExtraProperties: true,
     enableXfa: false,
     disableRange: true,
     disableStream: true,
@@ -362,7 +407,7 @@ export async function convertPdf(
     CanvasFactory: WorkerCanvasFactory,
     FilterFactory: NoopFilterFactory,
     disableFontFace: true,
-    fontExtraProperties: false,
+    fontExtraProperties: true,
     enableXfa: false,
     disableRange: true,
     disableStream: true,
@@ -393,13 +438,20 @@ export async function convertPdf(
     let ocrAttempts = 0
     let ocrPixels = 0
     let ocrUnavailable = false
+    let repairedTextPages = 0
+    let repairedGlyphs = 0
 
     for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
       const page = await document.getPage(pageNumber)
       const viewport = page.getViewport({ scale: 1 })
       pageGeometry.push({ width: viewport.width, height: viewport.height })
       const textContent = await page.getTextContent({ disableNormalization: false })
-      const extracted = extractStructuredPageText(textContent.items, viewport.width)
+      const repaired = await repairedPageItems(page, textContent.items)
+      if (repaired.repairedGlyphs > 0) {
+        repairedTextPages += 1
+        repairedGlyphs += repaired.repairedGlyphs
+      }
+      const extracted = extractStructuredPageText(repaired.items, viewport.width)
       let plain = extracted.plain
       let pageMarkdown = extracted.markdown
 
@@ -439,9 +491,9 @@ export async function convertPdf(
               ocrPages += 1
               warnings.push(`Page ${pageNumber} received a searchable text layer from bundled local OCR.`)
             }
-          } catch {
+          } catch (error) {
             ocrUnavailable = true
-            warnings.push('Bundled local OCR could not be initialized or completed; remaining visual pages were preserved without invented text.')
+            warnings.push(`Bundled local OCR could not be initialized or completed (${safeOcrFailureReason(error)}); remaining visual pages were preserved without invented text.`)
           } finally {
             if (canvas) {
               canvas.width = 0
@@ -480,6 +532,9 @@ export async function convertPdf(
     if (options.ocr.enabled && ocrAttempts >= SECURITY_POLICY.maxOcrPages) {
       warnings.push(`Local OCR stopped at the ${SECURITY_POLICY.maxOcrPages}-page safety limit.`)
     }
+    if (repairedGlyphs > 0) {
+      warnings.push(`Recovered ${repairedGlyphs.toLocaleString('en-US')} character(s) on ${repairedTextPages.toLocaleString('en-US')} page(s) from incomplete embedded PDF font mappings.`)
+    }
 
     const outlineSections = await readOutlineSections(document)
     let searchablePdf: Uint8Array | undefined
@@ -504,7 +559,7 @@ export async function convertPdf(
     const header = [
       `# ${safeMarkdownText(title)}`,
       author ? `**Author:** ${safeMarkdownText(author)}` : '',
-      `**Source:** local PDF text extraction${ocrPages > 0 ? ` plus bundled OCR on ${ocrPages} page(s)` : ''} with synchronized visual pages`,
+      `**Source:** local PDF text extraction${repairedGlyphs > 0 ? ` with embedded-font repair on ${repairedTextPages} page(s)` : ''}${ocrPages > 0 ? ` plus bundled OCR on ${ocrPages} page(s)` : ''} with synchronized visual pages`,
     ].filter(Boolean).join('\n\n')
     const outlineIndex = outlineSections.length
       ? `## Document outline\n\n${outlineSections
@@ -526,6 +581,8 @@ export async function convertPdf(
       processedBytes: extractedBytes,
       outputBytes: 0,
       ...(ocrPages > 0 ? { ocrPages } : {}),
+      ...(repairedTextPages > 0 ? { repairedTextPages } : {}),
+      ...(repairedGlyphs > 0 ? { repairedGlyphs } : {}),
       warnings: [...new Set(warnings)].slice(0, 100),
     }
     const files: Record<string, Uint8Array> = {
@@ -631,7 +688,7 @@ export async function inspectPdf(
     CanvasFactory: WorkerCanvasFactory,
     FilterFactory: NoopFilterFactory,
     disableFontFace: true,
-    fontExtraProperties: false,
+    fontExtraProperties: true,
     enableXfa: false,
     disableRange: true,
     disableStream: true,
@@ -651,11 +708,14 @@ export async function inspectPdf(
     }
     const sampleSize = Math.min(document.numPages, 12)
     let imageOnlySampledPages = 0
+    let repairedSampledPages = 0
     for (let pageNumber = 1; pageNumber <= sampleSize; pageNumber += 1) {
       const page = await document.getPage(pageNumber)
       const textContent = await page.getTextContent({ disableNormalization: false })
-      const hasText = textContent.items.some((item) =>
-        'str' in item && typeof item.str === 'string' && item.str.trim().length > 0)
+      const repaired = await repairedPageItems(page, textContent.items)
+      if (repaired.repairedGlyphs > 0) repairedSampledPages += 1
+      const hasText = repaired.items.some((item) =>
+        isRecord(item) && typeof item['str'] === 'string' && item['str'].trim().length > 0)
       if (!hasText) imageOnlySampledPages += 1
       page.cleanup()
     }
@@ -664,9 +724,14 @@ export async function inspectPdf(
       : imageOnlySampledPages === sampleSize
         ? 'none'
         : 'partial'
-    const warnings = imageOnlySampledPages > 0
-      ? [`${imageOnlySampledPages} of ${sampleSize} sampled page(s) have no extractable text layer.`]
-      : []
+    const warnings = [
+      ...(imageOnlySampledPages > 0
+        ? [`${imageOnlySampledPages} of ${sampleSize} sampled page(s) have no extractable text layer.`]
+        : []),
+      ...(repairedSampledPages > 0
+        ? [`${repairedSampledPages} of ${sampleSize} sampled page(s) use incomplete embedded font mappings; BookRefinery will repair them locally.`]
+        : []),
+    ]
 
     const author = metadataText(info, 'Author')
     return {

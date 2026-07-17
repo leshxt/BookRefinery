@@ -14,7 +14,7 @@ The baseline inspected on 14 July 2026 was upstream commit
 | ZIP handling | Whole archive synchronously expanded without resource limits | Size, count and compression-ratio checks plus a disposable worker |
 | Archive paths | No dedicated canonical path boundary | Rejects traversal, absolute paths, backslashes and case collisions |
 | XML | Entity processing remained reachable | Entities and DTD declarations rejected; entity processing disabled |
-| Remote resources | Optional localization fetched referenced URLs | No network feature; production CSP uses `connect-src 'none'` |
+| Remote resources | Optional localization fetched referenced URLs | No network feature; CSP permits only bundled same-origin OCR assets and the desktop session rejects every remote request |
 | Active content | HTML became Markdown without a strict passive-output boundary | Scripts, frames, forms and dangerous URL schemes are removed; SVG is rebuilt from a passive allowlist |
 | UI isolation | Command-line process only | Disposable preflight/conversion workers; ordinary jobs stop after 120 seconds and bounded opt-in OCR has a separate timeout |
 | Preview | Not applicable | Plain-text preview; converted content never becomes DOM HTML |
@@ -31,6 +31,8 @@ disabled. Network loading, XFA, system fonts, browser image decoders and WASM ar
 the outer worker remains subject to the same watchdog as ebook parsing. `pdf-lib` then builds a
 new document containing the JPEG page renderings plus a non-rendering Unicode text layer generated
 from PDF.js extraction; the original object graph, content streams and fonts are not copied.
+Incomplete embedded Unicode tables are repaired conservatively from the PDF font's own glyph-name
+differences before Markdown or the searchable layer is generated; unknown names are never guessed.
 
 This sandwich design preserves visible page content and placement while keeping text searchable for
 LLM ingestion and discarding source links, forms, scripts, attachments and annotations. The generated
@@ -48,7 +50,7 @@ a partial visual companion.
 
 Every profile is an explicit allowlist over the converter's complete safe intermediate output. The UI
 shows the exact paths, formats and optional files for the selected input format before a job starts.
-Every downloaded ZIP includes `SECURITY-REPORT.md` and a deterministic `EXPORT-MANIFEST.json` whose
+Every saved ZIP includes `SECURITY-REPORT.md` and a deterministic `EXPORT-MANIFEST.json` whose
 SHA-256 entries cover every other exported file.
 
 ## FB2-specific design
