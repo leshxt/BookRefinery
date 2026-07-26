@@ -29,6 +29,7 @@ interface JobBase {
 
 type Job =
   | (JobBase & { readonly status: 'inspecting' })
+  | (JobBase & { readonly status: 'password'; readonly incorrect: boolean })
   | (JobBase & { readonly status: 'ready'; readonly inspection: DocumentInspection })
   | (JobBase & { readonly status: 'queued'; readonly inspection: DocumentInspection })
   | (JobBase & {
@@ -51,6 +52,8 @@ type Job =
 type JobAction =
   | { readonly type: 'add'; readonly jobs: readonly Job[] }
   | { readonly type: 'inspected'; readonly id: string; readonly inspection: DocumentInspection }
+  | { readonly type: 'password-needed'; readonly id: string; readonly incorrect: boolean }
+  | { readonly type: 'unlock'; readonly id: string }
   | {
       readonly type: 'failed'
       readonly id: string
@@ -90,6 +93,16 @@ function jobsReducer(jobs: readonly Job[], action: JobAction): readonly Job[] {
       return jobs.map((job) =>
         job.id === action.id && job.status === 'inspecting'
           ? { id: job.id, file: job.file, status: 'ready', inspection: action.inspection }
+          : job)
+    case 'password-needed':
+      return jobs.map((job) =>
+        job.id === action.id
+          ? { id: job.id, file: job.file, status: 'password', incorrect: action.incorrect }
+          : job)
+    case 'unlock':
+      return jobs.map((job) =>
+        job.id === action.id && job.status === 'password'
+          ? { id: job.id, file: job.file, status: 'inspecting' }
           : job)
     case 'failed':
       return jobs.map((job) =>
@@ -139,6 +152,9 @@ function jobsReducer(jobs: readonly Job[], action: JobAction): readonly Job[] {
     case 'retry':
       return jobs.map((job) => {
         if (job.id !== action.id || job.status !== 'error') return job
+        if (job.inspection?.passwordProtected) {
+          return { id: job.id, file: job.file, status: 'password', incorrect: false }
+        }
         return job.inspection
           ? { id: job.id, file: job.file, status: 'ready', inspection: job.inspection }
           : { id: job.id, file: job.file, status: 'inspecting' }
@@ -215,13 +231,21 @@ function guessedFormat(file: File | undefined): DocumentFormat {
 }
 
 function inspectionFor(job: Job): DocumentInspection | null {
-  return job.status === 'inspecting' ? null : job.inspection
+  return job.status === 'ready' ||
+    job.status === 'queued' ||
+    job.status === 'running' ||
+    job.status === 'success' ||
+    job.status === 'error'
+    ? job.inspection
+    : null
 }
 
 function jobStatusLabel(job: Job): string {
   switch (job.status) {
     case 'inspecting':
       return 'Inspecting safely'
+    case 'password':
+      return job.incorrect ? 'Incorrect password' : 'Password needed'
     case 'ready':
       return 'Ready'
     case 'queued':
@@ -233,6 +257,44 @@ function jobStatusLabel(job: Job): string {
     case 'error':
       return `Rejected · ${job.code}`
   }
+}
+
+interface PdfPasswordFormProps {
+  readonly filename: string
+  readonly incorrect: boolean
+  readonly onUnlock: (password: string) => void
+}
+
+function PdfPasswordForm({ filename, incorrect, onUnlock }: PdfPasswordFormProps) {
+  return (
+    <form
+      className="password-form"
+      action={(formData) => {
+        const password = formData.get('pdf-password')
+        if (typeof password === 'string' && password.length > 0) onUnlock(password)
+      }}
+    >
+      <div>
+        <strong>{incorrect ? 'That password did not open the PDF' : 'This PDF needs a password'}</strong>
+        <p>
+          Enter it to inspect and prepare this file locally. It stays in memory only and is cleared
+          after this job. Prepared outputs are not re-locked.
+        </p>
+      </div>
+      <label>
+        <span>Password for {filename}</span>
+        <input
+          type="password"
+          name="pdf-password"
+          required
+          maxLength={SECURITY_POLICY.maxPdfPasswordLength}
+          autoComplete="off"
+          spellCheck={false}
+        />
+      </label>
+      <button type="submit">Unlock locally</button>
+    </form>
+  )
 }
 
 function isStandaloneApp(): boolean {
@@ -266,6 +328,7 @@ export function App() {
     initialDesktopInstallState,
   )
   const inspectionControllers = useRef(new Map<string, AbortController>())
+  const pdfPasswords = useRef(new Map<string, string>())
   const activeConversion = useRef<AbortController | null>(null)
   const stopBatch = useRef(false)
 
@@ -303,18 +366,38 @@ export function App() {
     const controller = new AbortController()
     inspectionControllers.current.set(job.id, controller)
     try {
-      const inspection = await runInspection(job.file, controller.signal)
+      const inspection = await runInspection(
+        job.file,
+        controller.signal,
+        pdfPasswords.current.get(job.id),
+      )
       dispatch({ type: 'inspected', id: job.id, inspection })
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') return
       const code = error instanceof WorkerConversionError ? error.code : 'CONVERSION_FAILED'
+      if (code === 'PASSWORD_REQUIRED' || code === 'INCORRECT_PASSWORD') {
+        pdfPasswords.current.delete(job.id)
+        dispatch({
+          type: 'password-needed',
+          id: job.id,
+          incorrect: code === 'INCORRECT_PASSWORD',
+        })
+        return
+      }
       const message = error instanceof WorkerConversionError
         ? error.message
         : 'The file could not be inspected safely.'
+      pdfPasswords.current.delete(job.id)
       dispatch({ type: 'failed', id: job.id, inspection: null, code, message })
     } finally {
       inspectionControllers.current.delete(job.id)
     }
+  }
+
+  const unlockPdf = (job: Extract<Job, { status: 'password' }>, password: string): void => {
+    pdfPasswords.current.set(job.id, password)
+    dispatch({ type: 'unlock', id: job.id })
+    void inspectJob({ id: job.id, file: job.file, status: 'inspecting' })
   }
 
   const addFiles = async (fileList: FileList | readonly File[]): Promise<void> => {
@@ -366,6 +449,7 @@ export function App() {
           options,
           (progress) => dispatch({ type: 'progress', id: job.id, progress }),
           controller.signal,
+          pdfPasswords.current.get(job.id),
         )
         dispatch({ type: 'complete', id: job.id, result })
       } catch (error) {
@@ -379,6 +463,14 @@ export function App() {
           })
         } else {
           const code = error instanceof WorkerConversionError ? error.code : 'CONVERSION_FAILED'
+          if (code === 'PASSWORD_REQUIRED' || code === 'INCORRECT_PASSWORD') {
+            dispatch({
+              type: 'password-needed',
+              id: job.id,
+              incorrect: code === 'INCORRECT_PASSWORD',
+            })
+            continue
+          }
           const message = error instanceof WorkerConversionError
             ? error.message
             : 'The file could not be prepared safely.'
@@ -391,6 +483,7 @@ export function App() {
           })
         }
       } finally {
+        pdfPasswords.current.delete(job.id)
         if (activeConversion.current === controller) activeConversion.current = null
       }
     }
@@ -420,6 +513,7 @@ export function App() {
 
   const removeJob = (job: Job): void => {
     inspectionControllers.current.get(job.id)?.abort()
+    pdfPasswords.current.delete(job.id)
     dispatch({ type: 'remove', id: job.id })
   }
 
@@ -671,8 +765,9 @@ export function App() {
               <span className="step-number">02</span>
               <strong>Automatic text recovery</strong>
               <p>
-                Recommended and on by default. Bundled English + German OCR runs only on PDF pages without usable text,
-                up to {SECURITY_POLICY.maxOcrPages} attempted pages / 90 million pixels per book. EPUB and FB2 text is left unchanged.
+                Recommended and on by default. Bundled English + German OCR covers every PDF page
+                without usable text in ordinary books. Exceptionally large jobs remain bounded to
+                {' '}{SECURITY_POLICY.maxOcrPages} textless pages; EPUB and FB2 text is left unchanged.
               </p>
             </div>
             <label className="switch">
@@ -737,6 +832,7 @@ export function App() {
 
               {jobs.map((job) => {
                 const inspection = inspectionFor(job)
+                const imageOnlyPages = inspection?.imageOnlyPages ?? 0
                 return (
                   <article className={`job-card job-${job.status}`} key={job.id}>
                     <div className="job-main">
@@ -762,9 +858,19 @@ export function App() {
                     {inspection?.ocrRecommended && (
                       <div className={`inline-notice ${ocrEnabled ? 'is-positive' : ''}`}>
                         {ocrEnabled
-                          ? 'Image-only pages detected. Automatic local text recovery will run during preparation.'
-                          : 'Image-only pages detected. Automatic text recovery is off, so those pages will remain visual-only.'}
+                          ? inspection.ocrWithinBudget === false
+                            ? `${imageOnlyPages.toLocaleString('en-US')} textless pages detected. This exceptionally large OCR job may reach its page or pixel safety budget; any later pages remain visual and are reported explicitly.`
+                            : `${imageOnlyPages.toLocaleString('en-US')} textless ${imageOnlyPages === 1 ? 'page' : 'pages'} detected. Automatic local text recovery will cover ${imageOnlyPages === 1 ? 'it' : 'all of them'} during preparation.`
+                          : `${imageOnlyPages.toLocaleString('en-US')} textless ${imageOnlyPages === 1 ? 'page will' : 'pages will'} remain visual-only because automatic recovery is off.`}
                       </div>
+                    )}
+
+                    {job.status === 'password' && (
+                      <PdfPasswordForm
+                        filename={job.file.name}
+                        incorrect={job.incorrect}
+                        onUnlock={(password) => unlockPdf(job, password)}
+                      />
                     )}
 
                     {job.status === 'running' && (

@@ -82,7 +82,9 @@ is impossible.
 - Extracted text is capped at 2 MB per page and 30 MB overall.
 - PDF.js receives a local byte array; streaming, range loading and worker fetch are disabled.
 - XFA, system fonts, font-face loading, browser image decoding and WASM are disabled.
-- Password-protected PDFs are rejected.
+- PDFs that require a password pause before preflight and request it locally. The password is bounded,
+  kept only in volatile memory, sent solely to the disposable worker for that file, and cleared after
+  the job. It is never written to reports, manifests, logs, or prepared outputs.
 - Up to 500 pages and 480 million total output pixels may be rendered into the sanitized companion.
   Individual source images are capped at 20 million pixels and temporary canvases at 64 MB.
 - Annotation rendering is disabled. Forms, links, attachments, annotations and JavaScript are not copied.
@@ -96,8 +98,9 @@ is impossible.
   repaired page and character counts are written to the security report.
 - Automatic OCR is enabled by default and runs only on pages without useful extracted text. English and German worker, core and
   language assets ship with the app and are loaded from the same origin; no OCR service or CDN is used.
-- OCR is capped at 30 attempted pages, 4.5 million pixels per page and 90 million pixels in total.
-  Recovered text enters the normal Markdown and sanitized PDF text layers.
+- Preflight checks every page for a usable text layer. OCR is capped at 500 textless pages,
+  4.5 million pixels per page and 1.5 billion rendered pixels in total, with a separate 60-minute
+  worker timeout. Recovered text enters the normal Markdown and sanitized PDF text layers.
 
 ## Known limitations
 

@@ -4,6 +4,8 @@ export type SecurityErrorCode =
   | 'UNSAFE_ARCHIVE'
   | 'UNSAFE_XML'
   | 'UNSUPPORTED_DOCUMENT'
+  | 'PASSWORD_REQUIRED'
+  | 'INCORRECT_PASSWORD'
   | 'CONVERSION_FAILED'
 
 export class SecurityError extends Error {

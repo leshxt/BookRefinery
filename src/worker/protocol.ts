@@ -7,12 +7,14 @@ export interface ConvertRequest {
   readonly filename: string
   readonly buffer: ArrayBuffer
   readonly options: ConversionOptions
+  readonly password?: string
 }
 
 export interface InspectRequest {
   readonly type: 'inspect'
   readonly filename: string
   readonly buffer: ArrayBuffer
+  readonly password?: string
 }
 
 export type WorkerRequest = ConvertRequest | InspectRequest

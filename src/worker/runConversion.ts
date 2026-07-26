@@ -95,6 +95,7 @@ export async function runConversion(
   options: ConversionOptions,
   onProgress: (progress: ConversionProgress) => void,
   signal: AbortSignal,
+  password?: string,
 ): Promise<ConversionResult> {
   const inputBuffer = await file.arrayBuffer()
 
@@ -177,6 +178,7 @@ export async function runConversion(
       filename: file.name,
       buffer: inputBuffer,
       options,
+      ...(password === undefined ? {} : { password }),
     }
     worker.postMessage(request, [inputBuffer])
   })
@@ -185,6 +187,7 @@ export async function runConversion(
 export async function runInspection(
   file: File,
   signal: AbortSignal,
+  password?: string,
 ): Promise<DocumentInspection> {
   const inputBuffer = await file.arrayBuffer()
 
@@ -209,8 +212,11 @@ export async function runInspection(
     const timeout = globalThis.setTimeout(() => {
       if (settled) return
       cleanup()
-      reject(new WorkerConversionError('LIMIT_EXCEEDED', 'The 45-second preflight limit was reached.'))
-    }, 45_000)
+      reject(new WorkerConversionError(
+        'LIMIT_EXCEEDED',
+        `The ${Math.round(SECURITY_POLICY.inspectionTimeoutMs / 60_000)}-minute preflight limit was reached.`,
+      ))
+    }, SECURITY_POLICY.inspectionTimeoutMs)
 
     signal.addEventListener('abort', abort, { once: true })
     worker.onerror = () => {
@@ -243,6 +249,7 @@ export async function runInspection(
       type: 'inspect',
       filename: file.name,
       buffer: inputBuffer,
+      ...(password === undefined ? {} : { password }),
     }
     worker.postMessage(request, [inputBuffer])
   })
