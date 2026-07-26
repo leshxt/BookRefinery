@@ -9,7 +9,7 @@ one portable output, not the product boundary.
 - [x] Four output profiles with exact paths and file formats visible before processing
 - [x] Batch queue for up to 20 books with independent workers, limits, progress, and cancellation
 - [x] Persistent per-item results, add-more flow, individual Save As, and combined Save As
-- [x] Opt-in bundled English/German OCR for scanned PDF pages with page and pixel budgets
+- [x] Default-on bundled English/German OCR for scanned PDF pages with page and pixel budgets
 - [x] Improved PDF line grouping, column reading order, de-hyphenation, and heading heuristics
 - [x] Stable PDF page files plus outline-derived section files and outline index
 - [x] Adaptive sanitized-PDF render scale and JPEG quality under a global pixel budget

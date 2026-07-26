@@ -124,7 +124,7 @@ export const DEFAULT_CONVERSION_OPTIONS: ConversionOptions = {
   profile: 'archive',
   outputs: ['visual-source', 'markdown', 'chunks', 'assets'],
   ocr: {
-    enabled: false,
+    enabled: true,
     languages: ['eng', 'deu'],
   },
 }

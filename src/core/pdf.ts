@@ -345,7 +345,7 @@ function reportMarkdown(summary: ConversionSummary, sourceName: string): string 
 - Total extracted text: 30 MB
 - OCR pages: 30
 - OCR pixels: 90 million
-- Isolated conversion worker: 120 seconds; opt-in OCR: 10 minutes
+- Isolated conversion worker: 120 seconds; automatic OCR: 10 minutes
 
 ## Preparation warnings
 
@@ -548,6 +548,7 @@ export async function convertPdf(
     let ocrAttempts = 0
     let ocrPixels = 0
     let ocrUnavailable = false
+    let ocrLimitReason: 'pages' | 'pixels' | 'runtime' | null = null
     let repairedTextPages = 0
     let repairedGlyphs = 0
 
@@ -570,50 +571,52 @@ export async function convertPdf(
         viewport.height,
       )]
 
-      if (
-        !plain &&
-        options.ocr.enabled &&
-        !ocrUnavailable &&
-        ocrAttempts < SECURITY_POLICY.maxOcrPages &&
-        typeof OffscreenCanvas !== 'undefined'
-      ) {
-        const basePixels = viewport.width * viewport.height
-        const remainingPixels = SECURITY_POLICY.maxOcrPixels - ocrPixels
-        const scale = Math.min(
-          2.2,
-          Math.sqrt(SECURITY_POLICY.maxOcrPagePixels / Math.max(basePixels, 1)),
-          Math.sqrt(remainingPixels / Math.max(basePixels, 1)),
-        )
-        if (scale >= 0.8) {
-          let canvas: OffscreenCanvas | null = null
-          try {
-            ocrAttempts += 1
-            if (!ocrSession) {
-              onProgress({ percent: 20, label: 'Starting bundled local OCR' })
-              ocrSession = await LocalOcrSession.create(options.ocr.languages, (progress) => {
-                onProgress({
-                  percent: 20 + Math.round(progress.progress * 10),
-                  label: `Local OCR: ${progress.status}`,
+      if (!plain && options.ocr.enabled && !ocrUnavailable) {
+        if (typeof OffscreenCanvas === 'undefined') {
+          ocrLimitReason = 'runtime'
+        } else if (ocrAttempts >= SECURITY_POLICY.maxOcrPages) {
+          ocrLimitReason = 'pages'
+        } else {
+          const basePixels = viewport.width * viewport.height
+          const remainingPixels = SECURITY_POLICY.maxOcrPixels - ocrPixels
+          const scale = Math.min(
+            2.2,
+            Math.sqrt(SECURITY_POLICY.maxOcrPagePixels / Math.max(basePixels, 1)),
+            Math.sqrt(remainingPixels / Math.max(basePixels, 1)),
+          )
+          if (scale < 0.8) {
+            ocrLimitReason = 'pixels'
+          } else {
+            let canvas: OffscreenCanvas | null = null
+            try {
+              ocrAttempts += 1
+              if (!ocrSession) {
+                onProgress({ percent: 20, label: 'Starting bundled local OCR' })
+                ocrSession = await LocalOcrSession.create(options.ocr.languages, (progress) => {
+                  onProgress({
+                    percent: 20 + Math.round(progress.progress * 10),
+                    label: `Local OCR: ${progress.status}`,
+                  })
                 })
-              })
-            }
-            canvas = await renderPageCanvas(page, scale)
-            ocrPixels += canvas.width * canvas.height
-            const recognition = await ocrSession.recognize(canvas)
-            if (recognition.text) {
-              plain = recognition.text
-              pageMarkdown = ocrMarkdown(recognition.text)
-              pageTextRuns = [...positionedOcrTextRuns(recognition, scale, viewport.height)]
-              ocrPages += 1
-              warnings.push(`Page ${pageNumber} received a searchable text layer from bundled local OCR.`)
-            }
-          } catch (error) {
-            ocrUnavailable = true
-            warnings.push(`Bundled local OCR could not be initialized or completed (${safeOcrFailureReason(error)}); remaining visual pages were preserved without invented text.`)
-          } finally {
-            if (canvas) {
-              canvas.width = 0
-              canvas.height = 0
+              }
+              canvas = await renderPageCanvas(page, scale)
+              ocrPixels += canvas.width * canvas.height
+              const recognition = await ocrSession.recognize(canvas)
+              if (recognition.text) {
+                plain = recognition.text
+                pageMarkdown = ocrMarkdown(recognition.text)
+                pageTextRuns = [...positionedOcrTextRuns(recognition, scale, viewport.height)]
+                ocrPages += 1
+                warnings.push(`Page ${pageNumber} received a searchable text layer from bundled local OCR.`)
+              }
+            } catch (error) {
+              ocrUnavailable = true
+              warnings.push(`Bundled local OCR could not be initialized or completed (${safeOcrFailureReason(error)}); remaining visual pages were preserved without invented text.`)
+            } finally {
+              if (canvas) {
+                canvas.width = 0
+                canvas.height = 0
+              }
             }
           }
         }
@@ -645,8 +648,12 @@ export async function convertPdf(
       })
     }
 
-    if (options.ocr.enabled && ocrAttempts >= SECURITY_POLICY.maxOcrPages) {
-      warnings.push(`Local OCR stopped at the ${SECURITY_POLICY.maxOcrPages}-page safety limit.`)
+    if (ocrLimitReason === 'pages') {
+      warnings.push(`Automatic text recovery stopped at the ${SECURITY_POLICY.maxOcrPages}-page safety limit; remaining pages stayed visual-only.`)
+    } else if (ocrLimitReason === 'pixels') {
+      warnings.push('Automatic text recovery stopped at the per-book pixel safety limit; remaining pages stayed visual-only.')
+    } else if (ocrLimitReason === 'runtime') {
+      warnings.push('Automatic text recovery was unavailable because this runtime does not provide OffscreenCanvas; visual pages were preserved.')
     }
     if (repairedGlyphs > 0) {
       warnings.push(`Recovered ${repairedGlyphs.toLocaleString('en-US')} character(s) on ${repairedTextPages.toLocaleString('en-US')} page(s) from incomplete embedded PDF font mappings.`)

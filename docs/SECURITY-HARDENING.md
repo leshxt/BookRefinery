@@ -16,7 +16,7 @@ The baseline inspected on 14 July 2026 was upstream commit
 | XML | Entity processing remained reachable | Entities and DTD declarations rejected; entity processing disabled |
 | Remote resources | Optional localization fetched referenced URLs | No network feature; CSP permits only bundled same-origin OCR assets and the desktop session rejects every remote request |
 | Active content | HTML became Markdown without a strict passive-output boundary | Scripts, frames, forms and dangerous URL schemes are removed; SVG is rebuilt from a passive allowlist |
-| UI isolation | Command-line process only | Disposable preflight/conversion workers; ordinary jobs stop after 120 seconds and bounded opt-in OCR has a separate timeout |
+| UI isolation | Command-line process only | Disposable preflight/conversion workers; ordinary jobs stop after 120 seconds and bounded automatic OCR has a separate timeout |
 | Preview | Not applicable | Plain-text preview; converted content never becomes DOM HTML |
 | Supply chain | Release commands used dynamically resolved tooling | Exact lockfile, SHA-pinned Actions and Dependabot |
 | Image handling | Referenced files could pass through without format-specific sanitization | Raster signatures are verified; SVG scripts, events, active elements and unsafe references are stripped |
@@ -37,8 +37,8 @@ differences before Markdown or the searchable layer is generated; unknown names 
 
 This sandwich design preserves visible page content and placement while keeping text searchable,
 cursor-selectable, and assigned to the correct page for LLM ingestion, while discarding source links,
-forms, scripts, attachments and annotations. The generated Unicode CMaps are parser-tested. Optional
-English/German OCR runs only for pages without useful
+forms, scripts, attachments and annotations. The generated Unicode CMaps are parser-tested. Automatic
+English/German OCR is enabled by default and runs only for pages without useful
 extractable text, uses bundled same-origin worker/core/language assets, and writes recovered text into
 the same Markdown and rebuilt PDF text layers rather than creating a disconnected duplicate.
 
