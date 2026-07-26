@@ -1,5 +1,7 @@
 # BookRefinery
 
+![BookRefinery logo](docs/assets/bookrefinery-wordmark-card.png)
+
 **Safe ebook preparation for NotebookLM, RAG, Markdown, and long-term archives — local,
 multimodal, and built for untrusted input.**
 
@@ -23,49 +25,33 @@ count, graphics, text coverage, decompressed size, warnings, and whether local O
 Up to 20 books can then be queued and processed sequentially, each with independent limits and
 cancellation. Sequential conversion keeps large PDF batches from exhausting memory.
 
-## Output profiles
+## Selectable outputs and presets
 
-The app shows these paths and file formats directly in the profile selector before processing.
+NotebookLM, RAG, Markdown Workspace, and Safe Archive are shortcut buttons. After choosing one, every
+output group can still be enabled or disabled independently:
 
-### NotebookLM
+| Output group | Best for | Contains |
+|---|---|---|
+| Sanitized visual source | NotebookLM, multimodal chat, visual verification | A passive EPUB or high-quality PDF with selectable text aligned to the original figures/pages |
+| Complete Markdown | Obsidian, editing, Git, simple LLM uploads | One complete `.md` file with stable chapter, page, and figure identifiers |
+| Retrieval chunks | RAG, embeddings, knowledge bases | `chapters/*.md` or `pages/PAGE-*.md`, plus PDF outline sections when available |
+| Visual assets | Visual RAG and figure auditing | Sanitized EPUB/FB2 images plus a figure-to-context index; for PDF, the page-faithful sanitized PDF |
 
-- EPUB/FB2: `notebooklm/book.sanitized.epub`, optional `notebooklm/book.md`, import guidance,
-  figure index, sanitized image fallbacks, security report, and JSON manifest.
-- PDF: `notebooklm/document.sanitized.pdf`, optional `notebooklm/document.md`, import guidance,
-  security report, and JSON manifest.
+Generated file and ZIP names come from the analyzed book title, for example
+`The Invincible Company.sanitized.pdf`, `The Invincible Company.md`, and
+`The Invincible Company-notebooklm.zip`. Every bundle also contains title-based security and
+SHA-256 manifest files.
 
-The sanitized EPUB or PDF is the primary one-source import. The Markdown file is a fallback, not a
-second default upload, which avoids duplicate passages and competing citations.
-
-### RAG / Knowledge Base
-
-- `book.md` or `document.md`
-- `chapters/*.md` or `pages/PAGE-*.md`
-- the page-faithful searchable `notebooklm/document.sanitized.pdf` for PDF visual grounding
-- PDF `sections/*.md` and `OUTLINE.md` when a usable outline exists
-- sanitized `assets/*` plus the figure index for EPUB/FB2
-- LLM-safety report, security report, and `EXPORT-MANIFEST.json`
-
-### Markdown Package
-
-- one canonical `book.md` or `document.md`
-- contextual sanitized graphics for EPUB/FB2
-- the page-faithful searchable PDF companion for PDF visual grounding
-- security report and checksum manifest
-
-### Safe Archive
-
-Every sanitized representation above in one reproducible ZIP.
-
-`EXPORT-MANIFEST.json` inventories every selected output file with media type, byte size, and
-SHA-256 checksum.
+For NotebookLM, the sanitized EPUB or PDF remains the recommended single-source upload. Select
+Complete Markdown only as a fallback when the target tool cannot use the visual source or text
+retrieval is insufficient; uploading both by default can create duplicate passages and citations.
 
 ## Local OCR
 
 OCR is opt-in and only runs on PDF pages without an extractable text layer. English and German
 language data, the Tesseract WebAssembly runtime, and its worker are bundled with the application;
-no model or language file is downloaded from a CDN. OCR text is written back into the normal
-Markdown and searchable-PDF layers, so it does not become a disconnected duplicate source.
+no model or language file is downloaded from a CDN. OCR text is written into the normal Markdown
+and position-aligned selectable PDF layers, so it does not become a disconnected duplicate source.
 
 OCR is bounded to 30 pages, 90 million pixels, 4.5 million pixels per page, and a separate extended
 worker timeout. Recognition is probabilistic: verify important passages against the preserved page

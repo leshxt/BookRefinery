@@ -3,6 +3,7 @@ import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate'
 import {
   profileOutputFiles,
   profileNeedsVisualCompanion,
+  outputsForProfile,
   type ConversionOptions,
   type OutputProfileId,
 } from '../core/contracts'
@@ -18,6 +19,7 @@ import { makePdf } from './pdf-fixture'
 function options(profile: OutputProfileId): ConversionOptions {
   return {
     profile,
+    outputs: outputsForProfile(profile),
     ocr: {
       enabled: false,
       languages: ['eng', 'deu'],
@@ -63,10 +65,10 @@ describe('isolated preflight inspection', () => {
 
 describe('profile-aware exports', () => {
   it.each([
-    ['notebooklm', ['notebooklm/book.sanitized.epub', 'notebooklm/book.md'], ['book.md', 'chapters/001-Kapitel Eins.md']],
-    ['rag', ['book.md', 'chapters/001-Kapitel Eins.md'], ['notebooklm/book.sanitized.epub']],
-    ['markdown', ['book.md', 'assets/FIG-0001-cover.png'], ['chapters/001-Kapitel Eins.md', 'notebooklm/book.sanitized.epub']],
-    ['archive', ['book.md', 'chapters/001-Kapitel Eins.md', 'notebooklm/book.sanitized.epub'], []],
+    ['notebooklm', ['notebooklm/Sicheres Testbuch.sanitized.epub'], ['Sicheres Testbuch.md', 'chapters/001-Kapitel Eins.md']],
+    ['rag', ['Sicheres Testbuch.md', 'chapters/001-Kapitel Eins.md'], ['notebooklm/Sicheres Testbuch.sanitized.epub']],
+    ['markdown', ['Sicheres Testbuch.md', 'assets/FIG-0001-cover.png'], ['chapters/001-Kapitel Eins.md', 'notebooklm/Sicheres Testbuch.sanitized.epub']],
+    ['archive', ['Sicheres Testbuch.md', 'chapters/001-Kapitel Eins.md', 'notebooklm/Sicheres Testbuch.sanitized.epub'], []],
   ] as const)('creates the exact %s EPUB bundle', async (profile, present, absent) => {
     const result = await convertDocument(makeEpub(), 'profile.epub', undefined, options(profile))
     const output = unzipSync(result.archive)
@@ -74,15 +76,17 @@ describe('profile-aware exports', () => {
 
     for (const path of present) expect(paths).toContain(path)
     for (const path of absent) expect(paths).not.toContain(path)
-    expect(paths).toContain('SECURITY-REPORT.md')
-    expect(paths).toContain('EXPORT-MANIFEST.json')
-    expect(result.filename).toContain(profile === 'archive' ? 'safe-archive' : profile)
+    expect(paths).toContain('Sicheres Testbuch.security-report.md')
+    expect(paths).toContain('Sicheres Testbuch.export-manifest.json')
+    expect(result.filename).toBe(
+      `Sicheres Testbuch-${profile === 'archive' ? 'safe-archive' : profile}.zip`,
+    )
   })
 
   it('adds a deterministic SHA-256 inventory for every selected file', async () => {
     const result = await convertDocument(makeEpub(), 'manifest.epub', undefined, options('markdown'))
     const output = unzipSync(result.archive)
-    const manifest = JSON.parse(strFromU8(output['EXPORT-MANIFEST.json']!)) as {
+    const manifest = JSON.parse(strFromU8(output['Sicheres Testbuch.export-manifest.json']!)) as {
       readonly generator: string
       readonly profile: string
       readonly output: { readonly files: readonly { readonly path: string; readonly sha256: string }[] }
@@ -92,8 +96,10 @@ describe('profile-aware exports', () => {
     expect(manifest.profile).toBe('markdown')
     expect(manifest.output.files.map((file) => file.path)).toEqual([
       'assets/FIG-0001-cover.png',
-      'book.md',
-      'SECURITY-REPORT.md',
+      'notebooklm/Sicheres Testbuch.figure-index.md',
+      'notebooklm/Sicheres Testbuch.llm-safety-report.md',
+      'Sicheres Testbuch.md',
+      'Sicheres Testbuch.security-report.md',
     ])
     expect(manifest.output.files.every((file) => /^[a-f0-9]{64}$/u.test(file.sha256))).toBe(true)
   })
@@ -107,13 +113,13 @@ describe('profile-aware exports', () => {
 
     expect(Object.keys(output)).toContain('pages/PAGE-0001.md')
     expect(Object.keys(output)).toContain('pages/PAGE-0002.md')
-    expect(Object.keys(output)).toContain('OUTLINE.md')
+    expect(Object.keys(output)).toContain('Test PDF.outline.md')
     expect(Object.keys(output)).toContain('sections/001-Opening.md')
     expect(Object.keys(output)).toContain('sections/002-Second part.md')
     expect(profileOutputFiles('rag', 'pdf').map((file) => file.path))
-      .toContain('notebooklm/document.sanitized.pdf')
+      .toContain('notebooklm/{Book title}.sanitized.pdf')
     expect(profileNeedsVisualCompanion('rag', 'pdf')).toBe(true)
-    expect(strFromU8(output['document.md']!)).toContain('PAGE-0002')
+    expect(strFromU8(output['Test PDF.md']!)).toContain('PAGE-0002')
   })
 
   it.each(['rag', 'markdown'] as const)('retains a generated PDF companion in the %s package', async (profile) => {
@@ -137,11 +143,45 @@ describe('profile-aware exports', () => {
       },
       preview: '# Document',
     }
-    const result = await packageConversionResult(raw, profile)
+    const result = await packageConversionResult(raw, {
+      profile,
+      outputs: ['visual-source', 'markdown'],
+    })
     const output = unzipSync(result.archive)
 
-    expect(Object.keys(output)).toContain('document.md')
-    expect(Object.keys(output)).toContain('notebooklm/document.sanitized.pdf')
+    expect(Object.keys(output)).toContain('Visual PDF.md')
+    expect(Object.keys(output)).toContain('notebooklm/Visual PDF.sanitized.pdf')
+  })
+
+  it('treats the sanitized PDF as the visual-assets output for a custom PDF bundle', async () => {
+    const result = await packageConversionResult({
+      archive: zipSync({
+        'document.md': strToU8('# Document'),
+        'notebooklm/document.sanitized.pdf': strToU8('%PDF-safe'),
+        'SECURITY-REPORT.md': strToU8('# Safe'),
+      }),
+      filename: 'visual-refined.zip',
+      summary: {
+        format: 'pdf',
+        title: 'Visual PDF',
+        units: 1,
+        unitLabel: 'pages',
+        assets: 1,
+        inputBytes: 100,
+        processedBytes: 10,
+        outputBytes: 0,
+        warnings: [],
+      },
+      preview: '# Document',
+    }, {
+      profile: 'custom',
+      outputs: ['assets'],
+    })
+    const paths = Object.keys(unzipSync(result.archive))
+
+    expect(paths).toContain('notebooklm/Visual PDF.sanitized.pdf')
+    expect(paths).not.toContain('Visual PDF.md')
+    expect(result.filename).toBe('Visual PDF-custom.zip')
   })
 
   it('describes concrete paths and formats for every selectable profile', () => {
@@ -149,7 +189,7 @@ describe('profile-aware exports', () => {
       const files = profileOutputFiles(profile, 'pdf')
       expect(files.length).toBeGreaterThan(2)
       expect(files.every((file) => file.path && file.format && file.description)).toBe(true)
-      expect(files.map((file) => file.path)).toContain('EXPORT-MANIFEST.json')
+      expect(files.map((file) => file.path)).toContain('{Book title}.export-manifest.json')
     }
   })
 })
@@ -211,8 +251,8 @@ describe('structured and adaptive PDF preparation', () => {
   })
 
   it('reduces JPEG quality as page count grows and refuses unsafe pixel plans', () => {
-    expect(pdfRenderPlan([{ width: 612, height: 792 }])?.jpegQuality).toBe(0.88)
-    expect(pdfRenderPlan(Array.from({ length: 200 }, () => ({ width: 612, height: 792 })))?.jpegQuality).toBe(0.76)
+    expect(pdfRenderPlan([{ width: 612, height: 792 }])?.jpegQuality).toBe(0.96)
+    expect(pdfRenderPlan(Array.from({ length: 200 }, () => ({ width: 612, height: 792 })))?.jpegQuality).toBe(0.91)
     expect(pdfRenderPlan(Array.from({ length: 2_000 }, () => ({ width: 2_000, height: 2_000 })))).toBeNull()
   })
 })

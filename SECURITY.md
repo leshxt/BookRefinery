@@ -83,11 +83,13 @@ is impossible.
 - PDF.js receives a local byte array; streaming, range loading and worker fetch are disabled.
 - XFA, system fonts, font-face loading, browser image decoding and WASM are disabled.
 - Password-protected PDFs are rejected.
-- Up to 500 pages and 240 million total output pixels may be rendered into the sanitized companion.
+- Up to 500 pages and 480 million total output pixels may be rendered into the sanitized companion.
   Individual source images are capped at 20 million pixels and temporary canvases at 64 MB.
 - Annotation rendering is disabled. Forms, links, attachments, annotations and JavaScript are not copied.
-- Every page is flattened to JPEG and embedded in a newly created PDF, then paired with an invisible
-  searchable Unicode layer rebuilt from locally extracted text. No source font or content object is copied.
+- Every page is flattened to a high-quality JPEG and embedded in a newly created PDF, then paired with
+  an invisible selectable Unicode layer whose runs are aligned to their original page coordinates. Search
+  highlights, cursor selection, copying, and page assignment therefore remain connected to the visible text.
+  No source font or content object is copied.
   If every page cannot be rendered within the limits, no partial sanitized PDF is exported.
 - When a source font has an incomplete Unicode table, BookRefinery conservatively repairs only known
   characters from that embedded font's own glyph-name differences. Unknown glyph names remain untouched;

@@ -29,14 +29,16 @@ PDF support uses the maintained `pdfjs-dist` package but intentionally does not 
 The converter extracts text and renders pages to bounded offscreen canvases with annotations
 disabled. Network loading, XFA, system fonts, browser image decoders and WASM are disabled, and
 the outer worker remains subject to the same watchdog as ebook parsing. `pdf-lib` then builds a
-new document containing the JPEG page renderings plus a non-rendering Unicode text layer generated
-from PDF.js extraction; the original object graph, content streams and fonts are not copied.
+new document containing high-quality JPEG page renderings plus a non-rendering Unicode text layer whose
+individual runs retain their PDF.js page coordinates; the original object graph, content streams and fonts
+are not copied.
 Incomplete embedded Unicode tables are repaired conservatively from the PDF font's own glyph-name
 differences before Markdown or the searchable layer is generated; unknown names are never guessed.
 
-This sandwich design preserves visible page content and placement while keeping text searchable for
-LLM ingestion and discarding source links, forms, scripts, attachments and annotations. The generated
-Unicode CMaps are parser-tested. Optional English/German OCR runs only for pages without useful
+This sandwich design preserves visible page content and placement while keeping text searchable,
+cursor-selectable, and assigned to the correct page for LLM ingestion, while discarding source links,
+forms, scripts, attachments and annotations. The generated Unicode CMaps are parser-tested. Optional
+English/German OCR runs only for pages without useful
 extractable text, uses bundled same-origin worker/core/language assets, and writes recovered text into
 the same Markdown and rebuilt PDF text layers rather than creating a disconnected duplicate.
 
@@ -48,10 +50,11 @@ a partial visual companion.
 
 ## Export integrity and profiles
 
-Every profile is an explicit allowlist over the converter's complete safe intermediate output. The UI
+Every output group is an explicit allowlist over the converter's complete safe intermediate output.
+Use-case presets select sensible groups, while the user may customize them before processing. The UI
 shows the exact paths, formats and optional files for the selected input format before a job starts.
-Every saved ZIP includes `SECURITY-REPORT.md` and a deterministic `EXPORT-MANIFEST.json` whose
-SHA-256 entries cover every other exported file.
+Every saved ZIP includes title-based security and deterministic export-manifest files whose SHA-256
+entries cover every other exported file.
 
 ## FB2-specific design
 

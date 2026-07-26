@@ -12,18 +12,18 @@ import type {
 } from 'pdfjs-dist/types/src/display/api'
 import { strToU8, zipSync } from 'fflate'
 import {
-  profileNeedsVisualCompanion,
+  selectionNeedsVisualCompanion,
   type ConversionOptions,
   type DocumentInspection,
 } from './contracts'
 import type { ConversionProgress, ConversionResult, ConversionSummary } from './convert'
 import { SecurityError } from './errors'
-import { LocalOcrSession } from './ocr'
+import { LocalOcrSession, type OcrRecognition } from './ocr'
 import { safeOutputName } from './path'
 import { repairPdfTextItems } from './pdf-font-repair'
 import { extractStructuredPageText } from './pdf-layout'
 import { SECURITY_POLICY } from './policy'
-import { SearchablePdfBuilder } from './visual-pdf'
+import { SearchablePdfBuilder, type SearchableTextRun } from './visual-pdf'
 import { isRecord } from './xml'
 
 type ProgressReporter = (progress: ConversionProgress) => void
@@ -108,14 +108,122 @@ export interface PdfRenderPlan {
 
 export function pdfRenderPlan(geometry: readonly PageGeometry[]): PdfRenderPlan | null {
   const basePixels = geometry.reduce((sum, page) => sum + page.width * page.height, 0)
-  const scale = Math.min(1.6, Math.sqrt(SECURITY_POLICY.maxVisualPdfPixels / Math.max(basePixels, 1)))
-  if (scale < 0.65) return null
+  const scale = Math.min(2.2, Math.sqrt(SECURITY_POLICY.maxVisualPdfPixels / Math.max(basePixels, 1)))
+  if (scale < 0.85) return null
   const jpegQuality = geometry.length <= 40
-    ? 0.88
+    ? 0.96
     : geometry.length <= 180
-      ? 0.82
-      : 0.76
+      ? 0.94
+      : 0.91
   return { scale, jpegQuality }
+}
+
+type PdfMatrix = readonly [number, number, number, number, number, number]
+
+function pdfMatrix(value: unknown): PdfMatrix | null {
+  if (!Array.isArray(value) || value.length !== 6 || !value.every(Number.isFinite)) return null
+  return [value[0], value[1], value[2], value[3], value[4], value[5]]
+}
+
+function multiplyMatrices(left: PdfMatrix, right: PdfMatrix): PdfMatrix {
+  return [
+    left[0] * right[0] + left[2] * right[1],
+    left[1] * right[0] + left[3] * right[1],
+    left[0] * right[2] + left[2] * right[3],
+    left[1] * right[2] + left[3] * right[3],
+    left[0] * right[4] + left[2] * right[5] + left[4],
+    left[1] * right[4] + left[3] * right[5] + left[5],
+  ]
+}
+
+function safeSearchText(value: string): string {
+  return value
+    .normalize('NFKC')
+    .replace(/[\u0000-\u001f\u007f]/gu, ' ')
+}
+
+function normalizedMatrixNumber(value: number): number {
+  return Object.is(value, -0) ? 0 : value
+}
+
+export function positionedPdfTextRuns(
+  items: readonly unknown[],
+  viewportTransform: readonly number[],
+  pageHeight: number,
+): readonly SearchableTextRun[] {
+  const viewport = pdfMatrix(viewportTransform)
+  if (!viewport || !(pageHeight > 0)) return []
+  return items.flatMap((item) => {
+    if (!isRecord(item) || typeof item['str'] !== 'string') return []
+    const text = safeSearchText(item['str'])
+    const itemMatrix = pdfMatrix(item['transform'])
+    const width = typeof item['width'] === 'number' && Number.isFinite(item['width'])
+      ? Math.abs(item['width'])
+      : 0
+    const height = typeof item['height'] === 'number' && Number.isFinite(item['height'])
+      ? Math.abs(item['height'])
+      : 0
+    if (!text || !itemMatrix) return []
+
+    const canvasMatrix = multiplyMatrices(viewport, itemMatrix)
+    const pageMatrix: PdfMatrix = [
+      canvasMatrix[0],
+      -canvasMatrix[1],
+      canvasMatrix[2],
+      -canvasMatrix[3],
+      canvasMatrix[4],
+      pageHeight - canvasMatrix[5],
+    ]
+    const baselineLength = Math.hypot(pageMatrix[0], pageMatrix[1])
+    const verticalLength = Math.hypot(pageMatrix[2], pageMatrix[3])
+    if (baselineLength === 0) return []
+    const characterCount = [...text].length
+    const advance = Math.max(width / Math.max(characterCount, 1), 0.01)
+    const verticalScale = Math.max(height, verticalLength, baselineLength, 0.01)
+    const baselineX = pageMatrix[0] / baselineLength
+    const baselineY = pageMatrix[1] / baselineLength
+    const verticalX = verticalLength > 0
+      ? pageMatrix[2] / verticalLength
+      : -baselineY
+    const verticalY = verticalLength > 0
+      ? pageMatrix[3] / verticalLength
+      : baselineX
+
+    return [{
+      text,
+      matrix: [
+        normalizedMatrixNumber(baselineX * advance),
+        normalizedMatrixNumber(baselineY * advance),
+        normalizedMatrixNumber(verticalX * verticalScale),
+        normalizedMatrixNumber(verticalY * verticalScale),
+        normalizedMatrixNumber(pageMatrix[4]),
+        normalizedMatrixNumber(pageMatrix[5]),
+      ],
+    }]
+  })
+}
+
+function positionedOcrTextRuns(
+  recognition: OcrRecognition,
+  renderScale: number,
+  pageHeight: number,
+): readonly SearchableTextRun[] {
+  return recognition.runs.map((run) => {
+    const characterCount = [...run.text].length
+    const width = run.width / renderScale
+    const height = run.height / renderScale
+    return {
+      text: run.text,
+      matrix: [
+        width / Math.max(characterCount, 1),
+        0,
+        0,
+        height,
+        run.x / renderScale,
+        pageHeight - ((run.y + run.height) / renderScale),
+      ],
+    }
+  })
 }
 
 function isRefProxy(value: unknown): value is RefProxy {
@@ -223,7 +331,7 @@ function reportMarkdown(summary: ConversionSummary, sourceName: string): string 
 - Pages with repaired embedded font mappings: ${summary.repairedTextPages ?? 0}
 - Characters recovered from embedded glyph names: ${summary.repairedGlyphs ?? 0}
 - Pages recovered with bundled local OCR: ${summary.ocrPages ?? 0}
-- Sanitized PDF companion: ${summary.assets > 0 ? 'notebooklm/document.sanitized.pdf' : 'not produced; see warnings'}
+- Sanitized PDF companion: ${summary.assets > 0 ? `notebooklm/${safeOutputName(summary.title, 'Untitled book')}.sanitized.pdf` : 'not produced; see warnings'}
 - Text output rendered as active HTML: no
 
 ## Enforced limits
@@ -231,7 +339,7 @@ function reportMarkdown(summary: ConversionSummary, sourceName: string): string 
 - Input: 80 MB
 - Text extraction pages: 2,000
 - Sanitized companion pages: 500
-- Sanitized companion pixel budget: 240 million
+- Sanitized companion pixel budget: 480 million
 - Individual decoded source image: 20 million pixels
 - Extracted text per page: 2 MB
 - Total extracted text: 30 MB
@@ -289,15 +397,17 @@ function safeOcrFailureReason(error: unknown): string {
 }
 
 function notebookReadme(title: string): string {
+  const titleStem = safeOutputName(title, 'Untitled book')
   return `# NotebookLM / multimodal LLM package
 
 ## Recommended import
 
-Start with **\`document.sanitized.pdf\` only**. It combines every safely rendered source page with a
-searchable, non-rendering text layer extracted locally from that same page. Text stays machine-readable,
-while diagrams, photographs, tables, typography, and layout remain visually in their original positions.
+Start with **\`${titleStem}.sanitized.pdf\` only**. It combines every safely rendered source page with a
+position-aligned selectable text layer extracted locally from that same page. Search, cursor selection,
+copying, and highlights stay connected to the page on which the text appears.
 
-Use \`document.md\` only as an optional text-only fallback. Do not add both by default because that can
+Select **Complete Markdown** in BookRefinery only when you also need a text-only fallback. Do not add
+both by default because that can
 create duplicate passages and competing citations.
 
 Markdown headings use stable \`PAGE-0001\` identifiers. \`PAGE-0001\` corresponds to page 1 in the sanitized
@@ -318,7 +428,7 @@ object graph or active features.
 async function renderSearchablePdf(
   bytes: Uint8Array,
   geometry: readonly PageGeometry[],
-  searchablePageText: readonly string[],
+  searchablePageRuns: readonly (readonly SearchableTextRun[])[],
   title: string,
   author: string | undefined,
   onProgress: ProgressReporter,
@@ -367,7 +477,7 @@ async function renderSearchablePdf(
         new Uint8Array(await jpegBlob.arrayBuffer()),
         geometry[pageNumber - 1]!.width,
         geometry[pageNumber - 1]!.height,
-        searchablePageText[pageNumber - 1] ?? '',
+        searchablePageRuns[pageNumber - 1] ?? [],
       )
       page.cleanup()
       canvas.width = 0
@@ -430,7 +540,7 @@ export async function convertPdf(
     const title = metadataText(info, 'Title') ?? sourceStem(sourceName)
     const author = metadataText(info, 'Author')
     const pageSections: PdfPageSection[] = []
-    const searchablePageText: string[] = []
+    const searchablePageRuns: SearchableTextRun[][] = []
     const pageGeometry: PageGeometry[] = []
     const warnings: string[] = []
     let extractedBytes = 0
@@ -454,6 +564,11 @@ export async function convertPdf(
       const extracted = extractStructuredPageText(repaired.items, viewport.width)
       let plain = extracted.plain
       let pageMarkdown = extracted.markdown
+      let pageTextRuns = [...positionedPdfTextRuns(
+        repaired.items,
+        viewport.transform,
+        viewport.height,
+      )]
 
       if (
         !plain &&
@@ -484,10 +599,11 @@ export async function convertPdf(
             }
             canvas = await renderPageCanvas(page, scale)
             ocrPixels += canvas.width * canvas.height
-            const recognized = await ocrSession.recognize(canvas)
-            if (recognized) {
-              plain = recognized
-              pageMarkdown = ocrMarkdown(recognized)
+            const recognition = await ocrSession.recognize(canvas)
+            if (recognition.text) {
+              plain = recognition.text
+              pageMarkdown = ocrMarkdown(recognition.text)
+              pageTextRuns = [...positionedOcrTextRuns(recognition, scale, viewport.height)]
               ocrPages += 1
               warnings.push(`Page ${pageNumber} received a searchable text layer from bundled local OCR.`)
             }
@@ -514,7 +630,7 @@ export async function convertPdf(
 
       if (!plain) warnings.push(`Page ${pageNumber} has no extractable text layer.`)
       const id = `PAGE-${String(pageNumber).padStart(4, '0')}`
-      searchablePageText.push(plain)
+      searchablePageRuns.push(pageTextRuns)
       pageSections.push({
         pageNumber,
         id,
@@ -538,7 +654,7 @@ export async function convertPdf(
 
     const outlineSections = await readOutlineSections(document)
     let searchablePdf: Uint8Array | undefined
-    if (profileNeedsVisualCompanion(options.profile, 'pdf')) {
+    if (selectionNeedsVisualCompanion(options.outputs, 'pdf')) {
       if (document.numPages > SECURITY_POLICY.maxVisualPdfPages) {
         warnings.push(`The sanitized PDF was not produced because the document exceeds the ${SECURITY_POLICY.maxVisualPdfPages}-page visual limit; Markdown text is still available.`)
       } else if (!pdfRenderPlan(pageGeometry)) {
@@ -547,7 +663,7 @@ export async function convertPdf(
         warnings.push('This browser does not provide OffscreenCanvas, so the sanitized PDF could not be produced; Markdown text is still available.')
       } else {
         try {
-          searchablePdf = await renderSearchablePdf(bytes, pageGeometry, searchablePageText, title, author, onProgress)
+          searchablePdf = await renderSearchablePdf(bytes, pageGeometry, searchablePageRuns, title, author, onProgress)
           if (!searchablePdf) warnings.push('The sanitized PDF could not be produced within the safe rendering limits; Markdown text is still available.')
         } catch {
           warnings.push('A page could not be rendered safely, so no partial sanitized PDF was exported; Markdown text is still available.')

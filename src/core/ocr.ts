@@ -8,6 +8,29 @@ export interface OcrProgress {
   readonly progress: number
 }
 
+export interface OcrTextRun {
+  readonly text: string
+  readonly x: number
+  readonly y: number
+  readonly width: number
+  readonly height: number
+}
+
+export interface OcrRecognition {
+  readonly text: string
+  readonly runs: readonly OcrTextRun[]
+}
+
+function normalizedOcrText(value: string): string {
+  return value
+    .normalize('NFKC')
+    .replace(/\r\n?/gu, '\n')
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/gu, '')
+    .replace(/[ \t]+\n/gu, '\n')
+    .replace(/\n{3,}/gu, '\n\n')
+    .trim()
+}
+
 export class LocalOcrSession {
   readonly #worker: OcrWorker
 
@@ -52,15 +75,33 @@ export class LocalOcrSession {
     return new LocalOcrSession(worker)
   }
 
-  async recognize(image: Blob | OffscreenCanvas): Promise<string> {
-    const result = await this.#worker.recognize(image, { rotateAuto: true })
-    return result.data.text
-      .normalize('NFKC')
-      .replace(/\r\n?/gu, '\n')
-      .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/gu, '')
-      .replace(/[ \t]+\n/gu, '\n')
-      .replace(/\n{3,}/gu, '\n\n')
-      .trim()
+  async recognize(image: Blob | OffscreenCanvas): Promise<OcrRecognition> {
+    const result = await this.#worker.recognize(
+      image,
+      { rotateAuto: false },
+      { text: true, blocks: true },
+    )
+    const runs = (result.data.blocks ?? []).flatMap((block) =>
+      block.paragraphs.flatMap((paragraph) =>
+        paragraph.lines.flatMap((line) =>
+          line.words.flatMap((word) => {
+            const text = normalizedOcrText(word.text)
+            const width = word.bbox.x1 - word.bbox.x0
+            const height = word.bbox.y1 - word.bbox.y0
+            return text && width > 0 && height > 0
+              ? [{
+                  text,
+                  x: word.bbox.x0,
+                  y: word.bbox.y0,
+                  width,
+                  height,
+                }]
+              : []
+          }))))
+    return {
+      text: normalizedOcrText(result.data.text),
+      runs,
+    }
   }
 
   async terminate(): Promise<void> {
