@@ -41,6 +41,12 @@ forms, scripts, attachments and annotations. The generated Unicode CMaps are par
 English/German OCR is enabled by default and runs only for pages without useful
 extractable text, uses bundled same-origin worker/core/language assets, and writes recovered text into
 the same Markdown and rebuilt PDF text layers rather than creating a disconnected duplicate.
+Preflight checks every page, ordinary books are covered completely, and unusually large OCR jobs remain
+bounded by per-page, per-book, and worker-runtime limits.
+
+PDFs that require a password pause before preflight. The password is entered per file, stays in volatile
+memory, is passed only to that file's disposable worker, and is cleared after the job. Prepared outputs
+are newly built and do not retain the source password.
 
 PDF text order is reconstructed from positioned glyphs with bounded line grouping, two-column reading
 order, dehyphenation and heading heuristics. Page-level Markdown is always emitted for retrieval

@@ -11,12 +11,13 @@ import { SECURITY_POLICY } from './policy'
 export async function inspectDocument(
   bytes: Uint8Array,
   sourceName: string,
+  password?: string,
 ): Promise<DocumentInspection> {
   if (bytes.byteLength > SECURITY_POLICY.maxInputBytes) {
     throw new SecurityError('LIMIT_EXCEEDED', 'The file exceeds the 80 MB input limit.')
   }
   const format = detectInputFormat(bytes, sourceName)
-  if (format === 'pdf') return inspectPdf(bytes, sourceName)
+  if (format === 'pdf') return inspectPdf(bytes, sourceName, password)
   if (format === 'fb2') return inspectFb2(bytes)
   if (format === 'fb2zip') return inspectFb2Zip(bytes)
 

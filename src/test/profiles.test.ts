@@ -15,7 +15,7 @@ import { extractStructuredPageText } from '../core/pdf-layout'
 import { pdfRenderPlan } from '../core/pdf'
 import { makeEpub } from './fixtures'
 import { makeFb2 } from './fb2-fixture'
-import { makePdf } from './pdf-fixture'
+import { makePasswordPdf, makePdf } from './pdf-fixture'
 
 function options(profile: OutputProfileId): ConversionOptions {
   return {
@@ -55,20 +55,66 @@ describe('isolated preflight inspection', () => {
     expect(compressed).toMatchObject({ format: 'fb2', title: 'Visual FB2 Test', graphics: 2 })
   })
 
-  it('samples PDF text coverage and recommends OCR only when needed', async () => {
-    const inspection = await inspectDocument(makePdf([['Searchable'], ['Text']]), 'example.pdf')
+  it('checks every PDF page and recommends OCR only when needed', async () => {
+    const inspection = await inspectDocument(
+      makePdf([[], ['Searchable'], [], ['Text']]),
+      'example.pdf',
+    )
 
     expect(inspection).toMatchObject({
       format: 'pdf',
-      units: 2,
-      textCoverage: 'full',
-      imageOnlySampledPages: 0,
-      ocrRecommended: false,
+      units: 4,
+      textCoverage: 'partial',
+      checkedPages: 4,
+      imageOnlyPages: 2,
+      ocrWithinBudget: true,
+      ocrRecommended: true,
     })
+  })
+
+  it('requests and validates a PDF password without persisting it in the inspection', async () => {
+    await expect(inspectDocument(makePasswordPdf(), 'locked.pdf')).rejects.toMatchObject({
+      code: 'PASSWORD_REQUIRED',
+    })
+    await expect(inspectDocument(makePasswordPdf(), 'locked.pdf', 'wrong')).rejects.toMatchObject({
+      code: 'INCORRECT_PASSWORD',
+    })
+
+    const inspection = await inspectDocument(
+      makePasswordPdf(),
+      'locked.pdf',
+      'open-sesame',
+    )
+    expect(inspection).toMatchObject({
+      format: 'pdf',
+      title: 'Password Test',
+      units: 1,
+      passwordProtected: true,
+    })
+    expect(JSON.stringify(inspection)).not.toContain('open-sesame')
   })
 })
 
 describe('profile-aware exports', () => {
+  it('prepares a password PDF after local unlock', async () => {
+    const result = await convertDocument(
+      makePasswordPdf(),
+      'locked.pdf',
+      undefined,
+      {
+        profile: 'custom',
+        outputs: ['markdown'],
+        ocr: { enabled: false, languages: ['eng', 'deu'] },
+      },
+      'open-sesame',
+    )
+    const output = unzipSync(result.archive)
+
+    expect(result.summary.title).toBe('Password Test')
+    expect(Object.keys(output)).toContain('Password Test.md')
+    expect(JSON.stringify(result.summary)).not.toContain('open-sesame')
+  })
+
   it.each([
     ['notebooklm', ['notebooklm/Sicheres Testbuch.sanitized.epub'], ['Sicheres Testbuch.md', 'chapters/001-Kapitel Eins.md']],
     ['rag', ['Sicheres Testbuch.md', 'chapters/001-Kapitel Eins.md'], ['notebooklm/Sicheres Testbuch.sanitized.epub']],

@@ -46,7 +46,7 @@ For NotebookLM, the sanitized EPUB or PDF remains the recommended single-source 
 Complete Markdown only as a fallback when the target tool cannot use the visual source or text
 retrieval is insufficient; uploading both by default can create duplicate passages and citations.
 
-## Automatic local text recovery
+## Automatic full-book text recovery
 
 OCR is enabled by default and only runs on PDF pages without an extractable text layer. It can be
 disabled before conversion when speed matters more than recovering scanned text. English and German
@@ -54,9 +54,19 @@ language data, the Tesseract WebAssembly runtime, and its worker are bundled wit
 no model or language file is downloaded from a CDN. OCR text is written into the normal Markdown
 and position-aligned selectable PDF layers, so it does not become a disconnected duplicate source.
 
-OCR is bounded to 30 attempted pages, 90 million pixels, 4.5 million pixels per page, and a separate extended
-worker timeout. Recognition is probabilistic: verify important passages against the preserved page
-image. The security report records OCR pages and any limit or initialization warning.
+Preflight checks every PDF page and reports the exact number that needs OCR. Ordinary books are
+processed completely; unusually large jobs remain bounded to 500 textless pages, 1.5 billion rendered
+pixels in total, 4.5 million pixels per page, and a separate 60-minute worker timeout. Recognition is
+probabilistic: verify important passages against the preserved page image. The security report records
+OCR pages and any limit or initialization warning.
+
+## Password PDFs
+
+When a PDF needs a password, BookRefinery asks for it next to that file and retries the isolated
+preflight locally. Incorrect passwords can be retried. The password stays in volatile memory only,
+is sent solely to that file's disposable worker, and is cleared after the job; it is never written to
+logs, reports, manifests, or output files. Prepared PDF and Markdown outputs are newly built and are
+not password-protected.
 
 Before OCR, BookRefinery also repairs incomplete embedded PDF font maps from their local glyph names.
 This recovers deterministic character mappings such as stylistic alternate letters without guessing

@@ -51,8 +51,11 @@ export interface DocumentInspection {
   readonly inputBytes: number
   readonly processedBytes: number
   readonly textCoverage: 'full' | 'partial' | 'none' | 'unknown'
-  readonly sampledPages?: number
-  readonly imageOnlySampledPages?: number
+  readonly checkedPages?: number
+  readonly imageOnlyPages?: number
+  readonly estimatedOcrPixels?: number
+  readonly ocrWithinBudget?: boolean
+  readonly passwordProtected?: boolean
   readonly ocrRecommended: boolean
   readonly warnings: readonly string[]
 }

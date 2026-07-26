@@ -240,6 +240,7 @@ main { padding-bottom: 90px; }
 .queue-heading .text-button { margin: 0; }
 .job-card { display: grid; gap: 13px; margin-top: 9px; padding: 16px; border: 1px solid var(--line); border-radius: 15px; background: rgba(4,14,11,.48); }
 .job-running { border-color: rgba(88,240,177,.3); }
+.job-password { border-color: rgba(88,240,177,.28); }
 .job-success { border-color: rgba(88,240,177,.22); background: rgba(31,105,79,.08); }
 .job-error { border-color: rgba(255,139,129,.22); }
 .job-main { display: flex; align-items: center; gap: 13px; }
@@ -252,6 +253,13 @@ main { padding-bottom: 90px; }
 .preflight-grid strong { overflow: hidden; color: #dceae4; font-size: .76rem; text-overflow: ellipsis; white-space: nowrap; }
 .inline-notice { padding: 10px 12px; border-left: 2px solid #e9c56f; border-radius: 0 8px 8px 0; background: rgba(201,158,58,.08); color: #cbbd98; font-size: .72rem; line-height: 1.5; }
 .inline-notice.is-positive { border-left-color: var(--mint); background: rgba(44,220,146,.07); color: #b9ddcc; }
+.password-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(190px, .75fr) auto; align-items: end; gap: 13px; padding: 14px; border: 1px solid rgba(88,240,177,.24); border-radius: 12px; background: rgba(33,117,85,.08); }
+.password-form > div strong { color: #e8f6ef; font-size: .78rem; }
+.password-form p { margin: 5px 0 0; color: #91a99e; font-size: .68rem; line-height: 1.45; }
+.password-form label { display: grid; gap: 5px; color: #9eb3aa; font-size: .62rem; }
+.password-form input { min-width: 0; height: 38px; padding: 0 10px; border: 1px solid var(--line); border-radius: 8px; background: #07110e; color: #edf9f3; font: .78rem ui-monospace, monospace; }
+.password-form input:focus { border-color: var(--mint); outline: 2px solid rgba(88,240,177,.15); outline-offset: 1px; }
+.password-form button { height: 38px; padding: 0 13px; border: 1px solid rgba(88,240,177,.34); border-radius: 8px; background: rgba(88,240,177,.09); color: var(--mint); cursor: pointer; font-size: .69rem; font-weight: 700; white-space: nowrap; }
 .job-progress { display: grid; gap: 8px; }
 .job-progress div { display: flex; justify-content: space-between; color: #bed0c7; font-size: .73rem; }
 .job-progress progress { width: 100%; height: 6px; border: 0; border-radius: 999px; overflow: hidden; appearance: none; }
@@ -326,6 +334,8 @@ footer a:hover { color: var(--mint); }
   .metrics { grid-template-columns: 1fr; }
   .ocr-option { align-items: flex-start; }
   .preflight-grid { grid-template-columns: 1fr 1fr; }
+  .password-form { grid-template-columns: 1fr; align-items: stretch; }
+  .password-form button { width: 100%; }
   .job-result { grid-template-columns: 1fr; }
   .job-result .warnings { grid-column: 1; }
   .queue-actions { grid-template-columns: 1fr; }

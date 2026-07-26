@@ -392,6 +392,7 @@ export async function convertDocument(
   sourceName: string,
   onProgress: ProgressReporter = () => undefined,
   options: ConversionOptions = DEFAULT_CONVERSION_OPTIONS,
+  password?: string,
 ): Promise<ConversionResult> {
   if (bytes.byteLength > SECURITY_POLICY.maxInputBytes) {
     throw new SecurityError('LIMIT_EXCEEDED', 'The file exceeds the 80 MB input limit.')
@@ -399,7 +400,7 @@ export async function convertDocument(
 
   const format = detectInputFormat(bytes, sourceName)
   const rawResult = format === 'pdf'
-    ? await convertPdf(bytes, sourceName, onProgress, options)
+    ? await convertPdf(bytes, sourceName, onProgress, options, password)
     : format === 'fb2'
       ? convertFb2(bytes, sourceName, onProgress)
       : format === 'fb2zip'

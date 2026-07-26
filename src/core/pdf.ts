@@ -3,6 +3,7 @@ import {
   getDocument,
   InvalidPDFException,
   PasswordException,
+  PasswordResponses,
   VerbosityLevel,
 } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import type {
@@ -27,6 +28,22 @@ import { SearchablePdfBuilder, type SearchableTextRun } from './visual-pdf'
 import { isRecord } from './xml'
 
 type ProgressReporter = (progress: ConversionProgress) => void
+
+function passwordError(error: PasswordException): SecurityError {
+  return error.code === PasswordResponses.INCORRECT_PASSWORD
+    ? new SecurityError('INCORRECT_PASSWORD', 'The PDF password is incorrect. Try again.')
+    : new SecurityError('PASSWORD_REQUIRED', 'This PDF requires a password.')
+}
+
+function pdfPasswordOption(password: string | undefined): { readonly password: string } | object {
+  return password === undefined ? {} : { password }
+}
+
+function assertPasswordLength(password: string | undefined): void {
+  if (password !== undefined && password.length > SECURITY_POLICY.maxPdfPasswordLength) {
+    throw new SecurityError('LIMIT_EXCEEDED', 'The PDF password exceeds the local input limit.')
+  }
+}
 
 export interface PageGeometry {
   readonly width: number
@@ -343,9 +360,9 @@ function reportMarkdown(summary: ConversionSummary, sourceName: string): string 
 - Individual decoded source image: 20 million pixels
 - Extracted text per page: 2 MB
 - Total extracted text: 30 MB
-- OCR pages: 30
-- OCR pixels: 90 million
-- Isolated conversion worker: 120 seconds; automatic OCR: 10 minutes
+- OCR pages: ${SECURITY_POLICY.maxOcrPages.toLocaleString('en-US')}
+- OCR pixels: ${(SECURITY_POLICY.maxOcrPixels / 1_000_000_000).toFixed(1)} billion in total; ${(SECURITY_POLICY.maxOcrPagePixels / 1_000_000).toFixed(1)} million per page
+- Isolated conversion worker: ${Math.round(SECURITY_POLICY.workerTimeoutMs / 1_000)} seconds; full-book OCR: ${Math.round(SECURITY_POLICY.ocrWorkerTimeoutMs / 60_000)} minutes
 
 ## Preparation warnings
 
@@ -432,6 +449,7 @@ async function renderSearchablePdf(
   title: string,
   author: string | undefined,
   onProgress: ProgressReporter,
+  password?: string,
 ): Promise<Uint8Array | undefined> {
   if (typeof OffscreenCanvas === 'undefined') return undefined
   if (geometry.length > SECURITY_POLICY.maxVisualPdfPages) return undefined
@@ -443,6 +461,7 @@ async function renderSearchablePdf(
 
   const searchableLoadingTask = getDocument({
     data: bytes.slice(),
+    ...pdfPasswordOption(password),
     verbosity: VerbosityLevel.ERRORS,
     useSystemFonts: false,
     useWorkerFetch: false,
@@ -498,13 +517,16 @@ export async function convertPdf(
   sourceName: string,
   onProgress: ProgressReporter,
   options: ConversionOptions,
+  password?: string,
 ): Promise<ConversionResult> {
+  assertPasswordLength(password)
   const inputBytes = bytes.byteLength
   let ocrSession: LocalOcrSession | null = null
   onProgress({ percent: 8, label: 'Checking the PDF structure in isolation' })
 
   const loadingTask = getDocument({
     data: bytes.slice(),
+    ...pdfPasswordOption(password),
     verbosity: VerbosityLevel.ERRORS,
     useSystemFonts: false,
     useWorkerFetch: false,
@@ -670,7 +692,15 @@ export async function convertPdf(
         warnings.push('This browser does not provide OffscreenCanvas, so the sanitized PDF could not be produced; Markdown text is still available.')
       } else {
         try {
-          searchablePdf = await renderSearchablePdf(bytes, pageGeometry, searchablePageRuns, title, author, onProgress)
+          searchablePdf = await renderSearchablePdf(
+            bytes,
+            pageGeometry,
+            searchablePageRuns,
+            title,
+            author,
+            onProgress,
+            password,
+          )
           if (!searchablePdf) warnings.push('The sanitized PDF could not be produced within the safe rendering limits; Markdown text is still available.')
         } catch {
           warnings.push('A page could not be rendered safely, so no partial sanitized PDF was exported; Markdown text is still available.')
@@ -754,7 +784,7 @@ export async function convertPdf(
   } catch (error) {
     if (error instanceof SecurityError) throw error
     if (error instanceof PasswordException) {
-      throw new SecurityError('UNSUPPORTED_DOCUMENT', 'Password-protected PDFs are not supported.')
+      throw passwordError(error)
     }
     if (error instanceof InvalidPDFException) {
       throw new SecurityError('INVALID_DOCUMENT', 'The PDF is damaged or invalid.')
@@ -796,9 +826,12 @@ interface PdfOutlineNode {
 export async function inspectPdf(
   bytes: Uint8Array,
   sourceName: string,
+  password?: string,
 ): Promise<DocumentInspection> {
+  assertPasswordLength(password)
   const loadingTask = getDocument({
     data: bytes.slice(),
+    ...pdfPasswordOption(password),
     verbosity: VerbosityLevel.ERRORS,
     useSystemFonts: false,
     useWorkerFetch: false,
@@ -829,30 +862,41 @@ export async function inspectPdf(
     } catch {
       info = undefined
     }
-    const sampleSize = Math.min(document.numPages, 12)
-    let imageOnlySampledPages = 0
-    let repairedSampledPages = 0
-    for (let pageNumber = 1; pageNumber <= sampleSize; pageNumber += 1) {
+    let imageOnlyPages = 0
+    let estimatedOcrPixels = 0
+    let repairedPages = 0
+    for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
       const page = await document.getPage(pageNumber)
       const textContent = await page.getTextContent({ disableNormalization: false })
       const repaired = await repairedPageItems(page, textContent.items)
-      if (repaired.repairedGlyphs > 0) repairedSampledPages += 1
+      if (repaired.repairedGlyphs > 0) repairedPages += 1
       const hasText = repaired.items.some((item) =>
         isRecord(item) && typeof item['str'] === 'string' && item['str'].trim().length > 0)
-      if (!hasText) imageOnlySampledPages += 1
+      if (!hasText) {
+        imageOnlyPages += 1
+        const viewport = page.getViewport({ scale: 1 })
+        const basePixels = Math.max(1, viewport.width * viewport.height)
+        const scale = Math.min(
+          2.2,
+          Math.sqrt(SECURITY_POLICY.maxOcrPagePixels / basePixels),
+        )
+        estimatedOcrPixels +=
+          Math.max(1, Math.ceil(viewport.width * scale)) *
+          Math.max(1, Math.ceil(viewport.height * scale))
+      }
       page.cleanup()
     }
-    const textCoverage = imageOnlySampledPages === 0
+    const textCoverage = imageOnlyPages === 0
       ? 'full'
-      : imageOnlySampledPages === sampleSize
+      : imageOnlyPages === document.numPages
         ? 'none'
         : 'partial'
     const warnings = [
-      ...(imageOnlySampledPages > 0
-        ? [`${imageOnlySampledPages} of ${sampleSize} sampled page(s) have no extractable text layer.`]
+      ...(imageOnlyPages > 0
+        ? [`${imageOnlyPages} of ${document.numPages} page(s) have no extractable text layer.`]
         : []),
-      ...(repairedSampledPages > 0
-        ? [`${repairedSampledPages} of ${sampleSize} sampled page(s) use incomplete embedded font mappings; BookRefinery will repair them locally.`]
+      ...(repairedPages > 0
+        ? [`${repairedPages} of ${document.numPages} page(s) use incomplete embedded font mappings; BookRefinery will repair them locally.`]
         : []),
     ]
 
@@ -867,15 +911,20 @@ export async function inspectPdf(
       inputBytes: bytes.byteLength,
       processedBytes: bytes.byteLength,
       textCoverage,
-      sampledPages: sampleSize,
-      imageOnlySampledPages,
-      ocrRecommended: imageOnlySampledPages > 0,
+      checkedPages: document.numPages,
+      imageOnlyPages,
+      estimatedOcrPixels,
+      ocrWithinBudget:
+        imageOnlyPages <= SECURITY_POLICY.maxOcrPages &&
+        estimatedOcrPixels <= SECURITY_POLICY.maxOcrPixels,
+      passwordProtected: password !== undefined,
+      ocrRecommended: imageOnlyPages > 0,
       warnings,
     }
   } catch (error) {
     if (error instanceof SecurityError) throw error
     if (error instanceof PasswordException) {
-      throw new SecurityError('UNSUPPORTED_DOCUMENT', 'Password-protected PDFs are not supported.')
+      throw passwordError(error)
     }
     if (error instanceof InvalidPDFException) {
       throw new SecurityError('INVALID_DOCUMENT', 'The PDF is damaged or invalid.')

@@ -11,6 +11,7 @@ import {
 import { convertDocument } from '../core/convert'
 import { publicError } from '../core/errors'
 import { inspectDocument } from '../core/inspection'
+import { SECURITY_POLICY } from '../core/policy'
 import type { WorkerRequest, WorkerResponse } from './protocol'
 
 const workerScope: DedicatedWorkerGlobalScope = self as DedicatedWorkerGlobalScope
@@ -44,10 +45,17 @@ function isConversionOptions(value: unknown): value is ConversionOptions {
 function isWorkerRequest(value: unknown): value is WorkerRequest {
   if (typeof value !== 'object' || value === null) return false
   const candidate = value as Record<string, unknown>
+  const password = candidate['password']
+  const hasValidPassword = password === undefined || (
+    typeof password === 'string' &&
+    password.length > 0 &&
+    password.length <= SECURITY_POLICY.maxPdfPasswordLength
+  )
   if (
     candidate['type'] === 'inspect' &&
     typeof candidate['filename'] === 'string' &&
-    candidate['buffer'] instanceof ArrayBuffer
+    candidate['buffer'] instanceof ArrayBuffer &&
+    hasValidPassword
   ) {
     return true
   }
@@ -55,6 +63,7 @@ function isWorkerRequest(value: unknown): value is WorkerRequest {
     candidate['type'] === 'convert' &&
     typeof candidate['filename'] === 'string' &&
     candidate['buffer'] instanceof ArrayBuffer &&
+    hasValidPassword &&
     isConversionOptions(candidate['options'])
   )
 }
@@ -72,7 +81,11 @@ async function handleRequest(value: unknown): Promise<void> {
 
   try {
     if (value.type === 'inspect') {
-      const inspection = await inspectDocument(new Uint8Array(value.buffer), value.filename)
+      const inspection = await inspectDocument(
+        new Uint8Array(value.buffer),
+        value.filename,
+        value.password,
+      )
       const response: WorkerResponse = { type: 'inspection-success', inspection }
       workerScope.postMessage(response)
       return
@@ -80,7 +93,7 @@ async function handleRequest(value: unknown): Promise<void> {
     const result = await convertDocument(new Uint8Array(value.buffer), value.filename, (progress) => {
       const response: WorkerResponse = { type: 'progress', progress }
       workerScope.postMessage(response)
-    }, value.options)
+    }, value.options, value.password)
     const transferable = result.archive.buffer.slice(
       result.archive.byteOffset,
       result.archive.byteOffset + result.archive.byteLength,
