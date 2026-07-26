@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate'
 import {
+  DEFAULT_CONVERSION_OPTIONS,
   profileOutputFiles,
   profileNeedsVisualCompanion,
   outputsForProfile,
@@ -28,6 +29,10 @@ function options(profile: OutputProfileId): ConversionOptions {
 }
 
 describe('isolated preflight inspection', () => {
+  it('enables automatic missing-text recovery by default', () => {
+    expect(DEFAULT_CONVERSION_OPTIONS.ocr.enabled).toBe(true)
+  })
+
   it('reports EPUB structure without converting it', async () => {
     const inspection = await inspectDocument(makeEpub(), 'example.epub')
 

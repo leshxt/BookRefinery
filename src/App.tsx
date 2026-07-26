@@ -257,7 +257,7 @@ export function App() {
   const [selectedOutputs, setSelectedOutputs] = useState<readonly OutputSelectionId[]>(
     outputsForProfile('notebooklm'),
   )
-  const [ocrEnabled, setOcrEnabled] = useState(false)
+  const [ocrEnabled, setOcrEnabled] = useState(true)
   const [saveNotice, setSaveNotice] = useState<{
     readonly kind: 'success' | 'fallback' | 'error'
     readonly message: string
@@ -587,6 +587,10 @@ export function App() {
                 Start with a use-case preset, then add or remove individual formats. Security report and checksum manifest are always included.
               </small>
             </legend>
+            <div className="output-group-heading">
+              <strong>Preset selection</strong>
+              <span>Choose the closest use case as your starting point.</span>
+            </div>
             <div className="preset-row" aria-label="Output presets">
               {OUTPUT_PROFILES.map((candidate) => {
                 const selected = selectedProfile?.id === candidate.id
@@ -606,6 +610,10 @@ export function App() {
                   </button>
                 )
               })}
+            </div>
+            <div className="output-group-heading format-selection-heading">
+              <strong>Format selection</strong>
+              <span>Fine-tune the individual outputs included in your bundle.</span>
             </div>
             <div className="output-selection-list">
               {OUTPUT_SELECTIONS.map((selection) => {
@@ -661,8 +669,11 @@ export function App() {
           <div className="ocr-option">
             <div>
               <span className="step-number">02</span>
-              <strong>Recover text from scanned PDF pages</strong>
-              <p>Optional bundled English + German OCR. It fills the PDF/Markdown text layers; it does not create a disconnected duplicate file.</p>
+              <strong>Automatic text recovery</strong>
+              <p>
+                Recommended and on by default. Bundled English + German OCR runs only on PDF pages without usable text,
+                up to {SECURITY_POLICY.maxOcrPages} attempted pages / 90 million pixels per book. EPUB and FB2 text is left unchanged.
+              </p>
             </div>
             <label className="switch">
               <input
@@ -672,7 +683,7 @@ export function App() {
                 onChange={(event) => setOcrEnabled(event.currentTarget.checked)}
               />
               <span aria-hidden="true" />
-              <b>{ocrEnabled ? 'On' : 'Off'}</b>
+              <b>{ocrEnabled ? 'Auto' : 'Off'}</b>
             </label>
           </div>
 
@@ -748,9 +759,11 @@ export function App() {
                       </div>
                     )}
 
-                    {inspection?.ocrRecommended && !ocrEnabled && (
-                      <div className="inline-notice">
-                        This PDF appears partly image-only. Enable local OCR above to recover searchable text.
+                    {inspection?.ocrRecommended && (
+                      <div className={`inline-notice ${ocrEnabled ? 'is-positive' : ''}`}>
+                        {ocrEnabled
+                          ? 'Image-only pages detected. Automatic local text recovery will run during preparation.'
+                          : 'Image-only pages detected. Automatic text recovery is off, so those pages will remain visual-only.'}
                       </div>
                     )}
 
@@ -822,7 +835,7 @@ export function App() {
             <h2 id="security-title">Distrust is<br />a feature.</h2>
             <p>Every book gets a disposable worker, strict resource budget, explicit output contract, and verifiable manifest.</p>
           </div>
-          <article><span>01</span><h3>Isolated jobs</h3><p>Preflight, conversion, and optional OCR stay outside the UI and can be terminated independently.</p></article>
+          <article><span>01</span><h3>Isolated jobs</h3><p>Preflight, conversion, and automatic OCR stay outside the UI and can be terminated independently.</p></article>
           <article><span>02</span><h3>Bounded resources</h3><p>Paths, archives, pages, pixels, OCR work, output size, and runtime all have hard limits.</p></article>
           <article><span>03</span><h3>Passive outputs</h3><p>Scripts, forms, remote sources, attachments, and active markup never enter the prepared bundle.</p></article>
         </section>

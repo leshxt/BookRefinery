@@ -39,7 +39,7 @@ is impossible.
 ### All documents
 
 - Preflight and conversion run in disposable Web Workers. Ordinary conversion has a 120-second
-  watchdog; opt-in OCR has a separate bounded timeout because language initialization is heavier.
+  watchdog; automatic OCR has a separate bounded timeout because language initialization is heavier.
 - Input is capped at 80 MB and generated output at 300 MB.
 - Untrusted HTML/Markdown is never rendered; the UI preview is plain text.
 - The production CSP permits connections only to bundled same-origin/blob OCR assets and blocks
@@ -94,7 +94,7 @@ is impossible.
 - When a source font has an incomplete Unicode table, BookRefinery conservatively repairs only known
   characters from that embedded font's own glyph-name differences. Unknown glyph names remain untouched;
   repaired page and character counts are written to the security report.
-- Optional OCR runs only on pages without useful extracted text. English and German worker, core and
+- Automatic OCR is enabled by default and runs only on pages without useful extracted text. English and German worker, core and
   language assets ship with the app and are loaded from the same origin; no OCR service or CDN is used.
 - OCR is capped at 30 attempted pages, 4.5 million pixels per page and 90 million pixels in total.
   Recovered text enters the normal Markdown and sanitized PDF text layers.
@@ -111,7 +111,7 @@ is impossible.
 - Community Windows installers are currently unsigned and may trigger SmartScreen. GitHub release
   assets should be downloaded only from the official repository and verified before execution.
 - PDF text order is heuristic because PDF stores positioned glyphs rather than semantic blocks.
-- OCR is opt-in and may contain recognition errors. It does not replace extractable source text and
+- OCR may contain recognition errors. It does not replace extractable source text and
   currently supports the bundled English and German models only.
 - Raster image decoders and the SVG renderer remain part of the consumer's eventual Markdown
   viewer, not this app. Sanitization reduces active-content risk but does not rasterize SVG.

@@ -1,7 +1,7 @@
 {
   "name": "bookrefinery",
   "private": true,
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "Local-first EPUB, FB2, and PDF sanitizer for searchable, multimodal LLM source packages.",
   "author": {
     "name": "leshxt",

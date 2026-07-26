@@ -6,7 +6,7 @@
 multimodal, and built for untrusted input.**
 
 BookRefinery is a local browser and native desktop app by [`leshxt`](https://github.com/leshxt). It
-inspects, sanitizes, optionally OCRs, and restructures EPUB, FictionBook 2, and PDF ebooks without
+inspects, sanitizes, automatically recovers missing PDF text, and restructures EPUB, FictionBook 2, and PDF ebooks without
 uploading them. Searchable text remains connected to essential graphics and page visuals; scripts,
 remote resources, forms, attachments, and active markup do not enter the prepared output.
 
@@ -46,16 +46,17 @@ For NotebookLM, the sanitized EPUB or PDF remains the recommended single-source 
 Complete Markdown only as a fallback when the target tool cannot use the visual source or text
 retrieval is insufficient; uploading both by default can create duplicate passages and citations.
 
-## Local OCR
+## Automatic local text recovery
 
-OCR is opt-in and only runs on PDF pages without an extractable text layer. English and German
+OCR is enabled by default and only runs on PDF pages without an extractable text layer. It can be
+disabled before conversion when speed matters more than recovering scanned text. English and German
 language data, the Tesseract WebAssembly runtime, and its worker are bundled with the application;
 no model or language file is downloaded from a CDN. OCR text is written into the normal Markdown
 and position-aligned selectable PDF layers, so it does not become a disconnected duplicate source.
 
-OCR is bounded to 30 pages, 90 million pixels, 4.5 million pixels per page, and a separate extended
+OCR is bounded to 30 attempted pages, 90 million pixels, 4.5 million pixels per page, and a separate extended
 worker timeout. Recognition is probabilistic: verify important passages against the preserved page
-image.
+image. The security report records OCR pages and any limit or initialization warning.
 
 Before OCR, BookRefinery also repairs incomplete embedded PDF font maps from their local glyph names.
 This recovers deterministic character mappings such as stylistic alternate letters without guessing
@@ -128,7 +129,7 @@ with the Windows NSIS installer, Linux AppImage, and Debian package.
 BookRefinery treats every input as hostile:
 
 - preflight and conversion run in disposable workers;
-- ordinary conversion has a 120-second watchdog; opt-in OCR has a separate bounded timeout;
+- ordinary conversion has a 120-second watchdog; automatic OCR has a separate bounded timeout;
 - every batch item receives independent path, archive, page, pixel, text, and output limits;
 - ZIP paths, entry counts, sizes, compression ratios, XML entities, and DTDs are checked;
 - PDF.js receives local bytes only; fetching, XFA, browser decoders, system fonts, and annotations
