@@ -1,7 +1,8 @@
 import { strToU8, unzipSync, zipSync } from 'fflate'
 import type { ConversionResult } from './convert'
-import type { OutputProfileId } from './contracts'
+import type { ConversionOptions, OutputSelectionId } from './contracts'
 import { SecurityError } from './errors'
+import { safeOutputName } from './path'
 import { SECURITY_POLICY } from './policy'
 
 const FIXED_ARCHIVE_DATE = new Date('2026-01-01T00:00:00Z')
@@ -13,32 +14,57 @@ interface ManifestFile {
   readonly sha256: string
 }
 
-function keepForProfile(path: string, profile: OutputProfileId): boolean {
-  if (path === 'SECURITY-REPORT.md') return true
-  if (profile === 'archive') return true
-  if (profile === 'notebooklm') {
-    return path.startsWith('notebooklm/') || path.startsWith('assets/')
+function keepForSelection(
+  path: string,
+  outputs: readonly OutputSelectionId[],
+  profile: ConversionOptions['profile'],
+): boolean {
+  if (path === 'SECURITY-REPORT.md' || path === 'notebooklm/LLM-SAFETY-REPORT.md') return true
+  if (profile === 'archive' && (path === 'notebooklm/book.md' || path === 'notebooklm/document.md')) {
+    return true
   }
-  if (profile === 'rag') {
-    return (
-      path === 'book.md' ||
-      path === 'document.md' ||
-      path === 'notebooklm/document.sanitized.pdf' ||
-      path.startsWith('chapters/') ||
-      path.startsWith('pages/') ||
-      path.startsWith('sections/') ||
-      path === 'OUTLINE.md' ||
-      path.startsWith('assets/') ||
-      path === 'notebooklm/FIGURE-INDEX.md' ||
-      path === 'notebooklm/LLM-SAFETY-REPORT.md'
-    )
-  }
-  return (
-    path === 'book.md' ||
-    path === 'document.md' ||
+  if (outputs.includes('visual-source') && (
+    path === 'notebooklm/book.sanitized.epub' ||
     path === 'notebooklm/document.sanitized.pdf' ||
-    path.startsWith('assets/')
+    path === 'notebooklm/README.md'
+  )) return true
+  if (outputs.includes('assets') && path === 'notebooklm/document.sanitized.pdf') return true
+  if (outputs.includes('markdown') && (path === 'book.md' || path === 'document.md')) return true
+  if (outputs.includes('chunks') && (
+    path.startsWith('chapters/') ||
+    path.startsWith('pages/') ||
+    path.startsWith('sections/') ||
+    path === 'OUTLINE.md'
+  )) return true
+  return outputs.includes('assets') && (
+    path.startsWith('assets/') ||
+    path === 'notebooklm/FIGURE-INDEX.md'
   )
+}
+
+function titledPath(path: string, titleStem: string): string {
+  switch (path) {
+    case 'book.md':
+    case 'document.md':
+      return `${titleStem}.md`
+    case 'notebooklm/book.sanitized.epub':
+      return `notebooklm/${titleStem}.sanitized.epub`
+    case 'notebooklm/document.sanitized.pdf':
+      return `notebooklm/${titleStem}.sanitized.pdf`
+    case 'notebooklm/book.md':
+    case 'notebooklm/document.md':
+      return `notebooklm/${titleStem}.md`
+    case 'notebooklm/FIGURE-INDEX.md':
+      return `notebooklm/${titleStem}.figure-index.md`
+    case 'notebooklm/LLM-SAFETY-REPORT.md':
+      return `notebooklm/${titleStem}.llm-safety-report.md`
+    case 'SECURITY-REPORT.md':
+      return `${titleStem}.security-report.md`
+    case 'OUTLINE.md':
+      return `${titleStem}.outline.md`
+    default:
+      return path
+  }
 }
 
 function mediaType(path: string): string {
@@ -77,28 +103,27 @@ async function sha256(data: Uint8Array): Promise<string> {
     .join('')
 }
 
-function outputFilename(filename: string, profile: OutputProfileId): string {
-  const suffix = {
-    notebooklm: 'notebooklm',
-    rag: 'rag',
-    markdown: 'markdown',
-    archive: 'safe-archive',
-  }[profile]
-  return filename.replace(/-refined\.zip$/u, `-${suffix}.zip`)
+function outputFilename(titleStem: string, profile: ConversionOptions['profile']): string {
+  const suffix = profile === 'archive' ? 'safe-archive' : profile
+  return `${titleStem}-${suffix}.zip`
 }
 
 export async function packageConversionResult(
   result: ConversionResult,
-  profile: OutputProfileId,
+  options: Pick<ConversionOptions, 'profile' | 'outputs'>,
 ): Promise<ConversionResult> {
   const unpacked = unzipSync(result.archive)
+  const titleStem = safeOutputName(result.summary.title, 'Untitled book')
   const selectedEntries = Object.entries(unpacked)
-    .filter(([path]) => keepForProfile(path, profile))
+    .filter(([path]) => keepForSelection(path, options.outputs, options.profile))
+    .map(([path, data]) => [titledPath(path, titleStem), data] as const)
     .sort(([left], [right]) => left.localeCompare(right, 'en-US'))
 
-  const files: Record<string, Uint8Array> = Object.fromEntries(selectedEntries)
+  const files: Record<string, Uint8Array> = {}
   const manifestFiles: ManifestFile[] = []
   for (const [path, data] of selectedEntries) {
+    if (files[path]) throw new SecurityError('CONVERSION_FAILED', `Two generated files resolved to ${path}.`)
+    files[path] = data
     manifestFiles.push({
       path,
       mediaType: mediaType(path),
@@ -108,9 +133,10 @@ export async function packageConversionResult(
   }
 
   const manifest = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     generator: 'BookRefinery',
-    profile,
+    profile: options.profile,
+    selectedOutputs: options.outputs,
     source: {
       format: result.summary.format,
       title: result.summary.title,
@@ -125,17 +151,18 @@ export async function packageConversionResult(
       files: manifestFiles,
     },
   }
-  files['EXPORT-MANIFEST.json'] = strToU8(`${JSON.stringify(manifest, null, 2)}\n`)
+  const manifestPath = `${titleStem}.export-manifest.json`
+  files[manifestPath] = strToU8(`${JSON.stringify(manifest, null, 2)}\n`)
 
   const archive = zipSync(files, { level: 6, mtime: FIXED_ARCHIVE_DATE })
   if (archive.byteLength > SECURITY_POLICY.maxOutputBytes) {
-    throw new SecurityError('LIMIT_EXCEEDED', 'The selected export profile exceeds the output size limit.')
+    throw new SecurityError('LIMIT_EXCEEDED', 'The selected outputs exceed the output size limit.')
   }
 
   return {
     ...result,
     archive,
-    filename: outputFilename(result.filename, profile),
+    filename: outputFilename(titleStem, options.profile),
     summary: {
       ...result.summary,
       outputBytes: archive.byteLength,

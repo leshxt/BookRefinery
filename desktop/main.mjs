@@ -228,7 +228,7 @@ function createMainWindow(isolatedSession) {
         true,
       )
       console.error(`BOOKREFINERY_SMOKE_PAGE=${pageState}`)
-      for (let attempt = 0; attempt < 180; attempt += 1) {
+      for (let attempt = 0; attempt < 1_200; attempt += 1) {
         const rawResult = await mainWindow?.webContents.executeJavaScript(
           'document.documentElement.dataset.desktopSmokeResult ?? ""',
           true,

@@ -2,15 +2,18 @@ import { useEffect, useReducer, useRef, useState, type SVGProps } from 'react'
 import { zipSync } from 'fflate'
 import {
   OUTPUT_PROFILES,
-  profileOutputFiles,
+  OUTPUT_SELECTIONS,
+  outputFilesForSelection,
+  outputsForProfile,
   type ConversionOptions,
   type DocumentFormat,
   type DocumentInspection,
-  type OutputProfileId,
+  type OutputSelectionId,
 } from './core/contracts'
 import type { ConversionProgress, ConversionResult } from './core/convert'
 import type { SecurityErrorCode } from './core/errors'
 import { formatBytes, SECURITY_POLICY } from './core/policy'
+import { safeOutputName } from './core/path'
 import { isNativeDesktopRuntime } from './platform'
 import { savePreparedFile } from './save-file'
 import {
@@ -241,14 +244,19 @@ function initialDesktopInstallState(): DesktopInstallState {
   return isStandaloneApp() ? { kind: 'installed' } : { kind: 'browser-menu' }
 }
 
-function outputFormatSummary(profile: OutputProfileId, format: DocumentFormat): string {
-  return [...new Set(profileOutputFiles(profile, format).map((file) => file.format))].join(' · ')
+function sameOutputs(
+  left: readonly OutputSelectionId[],
+  right: readonly OutputSelectionId[],
+): boolean {
+  return left.length === right.length && left.every((output) => right.includes(output))
 }
 
 export function App() {
   const [jobs, dispatch] = useReducer(jobsReducer, [])
   const [dragging, setDragging] = useState(false)
-  const [profile, setProfile] = useState<OutputProfileId>('notebooklm')
+  const [selectedOutputs, setSelectedOutputs] = useState<readonly OutputSelectionId[]>(
+    outputsForProfile('notebooklm'),
+  )
   const [ocrEnabled, setOcrEnabled] = useState(false)
   const [saveNotice, setSaveNotice] = useState<{
     readonly kind: 'success' | 'fallback' | 'error'
@@ -287,6 +295,9 @@ export function App() {
   const focusJob = jobs.find((job) => inspectionFor(job)) ?? jobs[0]
   const focusInspection = focusJob ? inspectionFor(focusJob) : null
   const focusFormat = focusInspection?.format ?? guessedFormat(focusJob?.file)
+  const focusTitleStem = safeOutputName(focusInspection?.title ?? 'Book title', 'Book title')
+  const selectedProfile = OUTPUT_PROFILES.find((candidate) =>
+    sameOutputs(candidate.outputs, selectedOutputs))
 
   const inspectJob = async (job: Extract<Job, { status: 'inspecting' }>): Promise<void> => {
     const controller = new AbortController()
@@ -336,7 +347,8 @@ export function App() {
     dispatch({ type: 'queue', ids: new Set(snapshot.map((job) => job.id)) })
     stopBatch.current = false
     const options: ConversionOptions = {
-      profile,
+      profile: selectedProfile?.id ?? 'custom',
+      outputs: selectedOutputs,
       ocr: {
         enabled: ocrEnabled,
         languages: ['eng', 'deu'],
@@ -449,7 +461,9 @@ export function App() {
       <header className="topbar">
         <div className="brand-lockup">
           <a className="brand" href="#main" aria-label="BookRefinery — go to the top">
-            <span className="brand-mark"><ShieldIcon /></span>
+            <span className="brand-mark">
+              <img src={`${import.meta.env.BASE_URL}bookrefinery-icon.png`} alt="" />
+            </span>
             <span className="brand-name" translate="no">Book<strong>Refinery</strong></span>
           </a>
           <a
@@ -568,45 +582,66 @@ export function App() {
           <fieldset className="profile-picker" disabled={batchRunning}>
             <legend>
               <span className="step-number">01</span>
-              Choose an output profile
+              Choose your outputs
               <small>
-                Recommended: NotebookLM · RAG adds chunks · Markdown is smallest · Archive includes everything.
-                Exact files shown for {focusFormat.toUpperCase()}.
+                Start with a use-case preset, then add or remove individual formats. Security report and checksum manifest are always included.
               </small>
             </legend>
-            <div className="profile-grid">
+            <div className="preset-row" aria-label="Output presets">
               {OUTPUT_PROFILES.map((candidate) => {
-                const selected = profile === candidate.id
-                const outputFiles = profileOutputFiles(candidate.id, focusFormat)
+                const selected = selectedProfile?.id === candidate.id
                 return (
-                  <article className={`profile-card ${selected ? 'is-selected' : ''}`} key={candidate.id}>
-                    <label className="profile-choice">
+                  <button
+                    className={`preset-button ${selected ? 'is-selected' : ''}`}
+                    type="button"
+                    aria-pressed={selected}
+                    key={candidate.id}
+                    onClick={() => setSelectedOutputs(candidate.outputs)}
+                  >
+                    <strong>{candidate.name}</strong>
+                    <span>{candidate.difference}</span>
+                    {'recommended' in candidate && candidate.recommended && (
+                      <small>Recommended</small>
+                    )}
+                  </button>
+                )
+              })}
+            </div>
+            <div className="output-selection-list">
+              {OUTPUT_SELECTIONS.map((selection) => {
+                const selected = selectedOutputs.includes(selection.id)
+                const exactFiles = outputFilesForSelection([selection.id], focusFormat)
+                  .filter((file) => !file.description.endsWith('Always included.'))
+                return (
+                  <article className={`output-selection ${selected ? 'is-selected' : ''}`} key={selection.id}>
+                    <label>
                       <input
-                        type="radio"
-                        name="output-profile"
-                        value={candidate.id}
+                        type="checkbox"
                         checked={selected}
-                        onChange={() => setProfile(candidate.id)}
+                        onChange={() => {
+                          setSelectedOutputs((current) => {
+                            if (current.includes(selection.id)) {
+                              return current.length === 1
+                                ? current
+                                : current.filter((output) => output !== selection.id)
+                            }
+                            return [...current, selection.id]
+                          })
+                        }}
                       />
-                      <span className="profile-check" aria-hidden="true">{selected ? '✓' : ''}</span>
-                      <strong>
-                        {candidate.name}
-                        {'recommended' in candidate && candidate.recommended && (
-                          <span className="recommended-tag">Recommended</span>
-                        )}
-                      </strong>
-                      <span className="profile-summary">{candidate.summary}</span>
-                      <span className="profile-difference">{candidate.difference}</span>
-                      <small className="profile-formats">
-                        <span>Formats</span> {outputFormatSummary(candidate.id, focusFormat)}
-                      </small>
+                      <span className="output-check" aria-hidden="true">{selected ? '✓' : ''}</span>
+                      <span>
+                        <strong>{selection.name}</strong>
+                        <small>{selection.formats} · {selection.useCase}</small>
+                      </span>
                     </label>
-                    <details className="profile-details">
-                      <summary>View exact files <span>{outputFiles.length}</span></summary>
+                    <p>{selection.description}</p>
+                    <details>
+                      <summary>Exact {focusFormat.toUpperCase()} files</summary>
                       <ul className="output-file-list">
-                        {outputFiles.map((file) => (
+                        {exactFiles.map((file) => (
                           <li key={file.path}>
-                            <code>{file.path}</code>
+                            <code>{file.path.replace('{Book title}', focusTitleStem)}</code>
                             <span>{file.format}{file.optional ? ' · if available' : ''}</span>
                             <small>{file.description}</small>
                           </li>
@@ -617,6 +652,10 @@ export function App() {
                 )
               })}
             </div>
+            <p className="custom-output-note">
+              Current bundle: <strong>{selectedProfile?.name ?? 'Custom selection'}</strong>
+              {' '}· {selectedOutputs.length} output {selectedOutputs.length === 1 ? 'group' : 'groups'}
+            </p>
           </fieldset>
 
           <div className="ocr-option">
@@ -756,7 +795,7 @@ export function App() {
                   <button className="secondary-button" type="button" onClick={cancelBatch}>Cancel batch</button>
                 ) : (
                   <button className="primary-button" type="button" disabled={readyJobs.length === 0} onClick={() => void startBatch()}>
-                    <ShieldIcon /> Prepare {readyJobs.length || 'ready'} {readyJobs.length === 1 ? 'book' : 'books'} as {OUTPUT_PROFILES.find((item) => item.id === profile)?.name}
+                    <ShieldIcon /> Prepare {readyJobs.length || 'ready'} {readyJobs.length === 1 ? 'book' : 'books'} as {selectedProfile?.name ?? 'Custom bundle'}
                   </button>
                 )}
                 {successfulJobs.length > 1 && (

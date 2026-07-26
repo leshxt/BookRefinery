@@ -1,11 +1,15 @@
 export const OUTPUT_PROFILE_IDS = ['notebooklm', 'rag', 'markdown', 'archive'] as const
+export const OUTPUT_SELECTION_IDS = ['visual-source', 'markdown', 'chunks', 'assets'] as const
 
 export type OutputProfileId = typeof OUTPUT_PROFILE_IDS[number]
+export type OutputModeId = OutputProfileId | 'custom'
+export type OutputSelectionId = typeof OUTPUT_SELECTION_IDS[number]
 export type DocumentFormat = 'epub' | 'fb2' | 'pdf'
 export type OcrLanguage = 'eng' | 'deu'
 
 export interface ConversionOptions {
-  readonly profile: OutputProfileId
+  readonly profile: OutputModeId
+  readonly outputs: readonly OutputSelectionId[]
   readonly ocr: {
     readonly enabled: boolean
     readonly languages: readonly OcrLanguage[]
@@ -24,7 +28,16 @@ export interface OutputProfile {
   readonly name: string
   readonly summary: string
   readonly difference: string
+  readonly outputs: readonly OutputSelectionId[]
   readonly recommended?: boolean
+}
+
+export interface OutputSelection {
+  readonly id: OutputSelectionId
+  readonly name: string
+  readonly formats: string
+  readonly useCase: string
+  readonly description: string
 }
 
 export interface DocumentInspection {
@@ -48,32 +61,68 @@ export const OUTPUT_PROFILES = [
   {
     id: 'notebooklm',
     name: 'NotebookLM',
-    summary: 'One upload-ready visual source plus an optional Markdown fallback.',
+    summary: 'One visual, searchable source without duplicate passages.',
     difference: 'Best default for NotebookLM and multimodal chat.',
+    outputs: ['visual-source'],
     recommended: true,
   },
   {
     id: 'rag',
     name: 'RAG / Knowledge Base',
-    summary: 'Adds page or chapter chunks, indexes, and machine-readable structure.',
-    difference: 'Choose this when a retrieval pipeline indexes separate files.',
+    summary: 'Markdown, retrieval chunks, and separate figures.',
+    difference: 'For indexing pipelines that retrieve small, independent files.',
+    outputs: ['markdown', 'chunks', 'assets'],
   },
   {
     id: 'markdown',
-    name: 'Markdown Package',
-    summary: 'The smallest readable bundle: one Markdown file plus its visual companion.',
-    difference: 'Choose this for editing, Git, Obsidian, or simple text workflows.',
+    name: 'Markdown Workspace',
+    summary: 'One readable Markdown document plus separate figures.',
+    difference: 'For editing, Git, Obsidian, and text-first tools.',
+    outputs: ['markdown', 'assets'],
   },
   {
     id: 'archive',
     name: 'Safe Archive',
-    summary: 'Every sanitized representation and supporting file in one bundle.',
-    difference: 'Best for preservation, but unnecessarily large for a direct LLM upload.',
+    summary: 'Every sanitized representation in one documented bundle.',
+    difference: 'For preservation and maximum flexibility.',
+    outputs: ['visual-source', 'markdown', 'chunks', 'assets'],
   },
 ] as const satisfies readonly OutputProfile[]
 
+export const OUTPUT_SELECTIONS = [
+  {
+    id: 'visual-source',
+    name: 'Sanitized visual source',
+    formats: 'PDF or EPUB',
+    useCase: 'NotebookLM, multimodal chat, visual verification',
+    description: 'Keeps selectable text together with the original page or figure context in one passive file.',
+  },
+  {
+    id: 'markdown',
+    name: 'Complete Markdown',
+    formats: 'MD',
+    useCase: 'Obsidian, editing, Git, simple LLM uploads',
+    description: 'A single readable text document with stable page, chapter, and figure identifiers.',
+  },
+  {
+    id: 'chunks',
+    name: 'Retrieval chunks',
+    formats: 'MD + outline',
+    useCase: 'RAG, embeddings, knowledge bases',
+    description: 'Separate pages or chapters, plus PDF sections and outline data when available.',
+  },
+  {
+    id: 'assets',
+    name: 'Visual assets',
+    formats: 'Images + index or PDF',
+    useCase: 'Visual RAG, figure auditing, image-capable LLMs',
+    description: 'Exports sanitized EPUB/FB2 figures with stable locations. For PDF, it keeps visuals in their page context inside the sanitized PDF.',
+  },
+] as const satisfies readonly OutputSelection[]
+
 export const DEFAULT_CONVERSION_OPTIONS: ConversionOptions = {
   profile: 'archive',
+  outputs: ['visual-source', 'markdown', 'chunks', 'assets'],
   ocr: {
     enabled: false,
     languages: ['eng', 'deu'],
@@ -82,165 +131,134 @@ export const DEFAULT_CONVERSION_OPTIONS: ConversionOptions = {
 
 const COMMON_REPORTS: readonly OutputFileSpec[] = [
   {
-    path: 'SECURITY-REPORT.md',
+    path: '{Book title}.security-report.md',
     format: 'Markdown',
-    description: 'Limits, removals, warnings, and the applied security policy.',
+    description: 'Limits, removals, warnings, and the applied security policy. Always included.',
   },
   {
-    path: 'EXPORT-MANIFEST.json',
+    path: '{Book title}.export-manifest.json',
     format: 'JSON',
-    description: 'Deterministic file inventory with SHA-256 checksums.',
+    description: 'SHA-256 inventory of every selected file. Always included.',
   },
 ]
 
-function bookPrimary(format: 'epub' | 'fb2'): OutputFileSpec {
-  return {
-    path: 'notebooklm/book.sanitized.epub',
-    format: 'EPUB',
-    description: `Sanitized visual ${format.toUpperCase()} content rebuilt as one passive multimodal ebook.`,
-  }
-}
-
-function pdfPrimary(): OutputFileSpec {
-  return {
-    path: 'notebooklm/document.sanitized.pdf',
-    format: 'PDF',
-    description: 'Page-faithful sanitized PDF with a rebuilt searchable Unicode text layer.',
-    optional: true,
-  }
-}
-
-function notebookOutputs(format: DocumentFormat): readonly OutputFileSpec[] {
-  const primary = format === 'pdf' ? pdfPrimary() : bookPrimary(format)
+function visualSourceOutputs(format: DocumentFormat): readonly OutputFileSpec[] {
   return [
-    primary,
     {
-      path: format === 'pdf' ? 'notebooklm/document.md' : 'notebooklm/book.md',
-      format: 'Markdown',
-      description: 'Text-only fallback with stable reading-position identifiers.',
+      path: format === 'pdf'
+        ? 'notebooklm/{Book title}.sanitized.pdf'
+        : 'notebooklm/{Book title}.sanitized.epub',
+      format: format === 'pdf' ? 'PDF' : 'EPUB',
+      description: format === 'pdf'
+        ? 'High-quality passive page renderings with a rebuilt, position-aligned selectable text layer.'
+        : `Passive ${format.toUpperCase()} content with live text and sanitized graphics in reading order.`,
+      optional: format === 'pdf',
     },
     {
       path: 'notebooklm/README.md',
       format: 'Markdown',
-      description: 'Exact import instructions for the generated source.',
+      description: 'Import guidance for the selected visual source.',
     },
-    ...(format === 'pdf'
-      ? []
-      : [
-          {
-            path: 'notebooklm/FIGURE-INDEX.md',
-            format: 'Markdown',
-            description: 'Maps each figure to its reading position and nearby text.',
-          },
-          {
-            path: 'assets/*.{png,jpg,gif,webp,svg}',
-            format: 'Images',
-            description: 'Sanitized standalone figure fallbacks.',
-            optional: true,
-          },
-        ]),
-    ...COMMON_REPORTS,
   ]
 }
 
-function ragOutputs(format: DocumentFormat): readonly OutputFileSpec[] {
+function markdownOutputs(): readonly OutputFileSpec[] {
+  return [{
+    path: '{Book title}.md',
+    format: 'Markdown',
+    description: 'Complete readable text with stable page, chapter, and figure identifiers.',
+  }]
+}
+
+function chunkOutputs(format: DocumentFormat): readonly OutputFileSpec[] {
+  return format === 'pdf'
+    ? [
+        {
+          path: 'pages/PAGE-*.md',
+          format: 'Markdown',
+          description: 'One independently indexable file per PDF page.',
+        },
+        {
+          path: 'sections/*.md',
+          format: 'Markdown',
+          description: 'Outline-derived sections when a usable PDF outline exists.',
+          optional: true,
+        },
+        {
+          path: '{Book title}.outline.md',
+          format: 'Markdown',
+          description: 'Stable outline-to-page mapping when present.',
+          optional: true,
+        },
+      ]
+    : [{
+        path: 'chapters/*.md',
+        format: 'Markdown',
+        description: 'One independently indexable file per chapter.',
+      }]
+}
+
+function assetOutputs(format: DocumentFormat): readonly OutputFileSpec[] {
+  if (format === 'pdf') {
+    return [{
+      path: 'notebooklm/{Book title}.sanitized.pdf',
+      format: 'Searchable PDF',
+      description: 'PDF graphics stay at their exact page positions with selectable text; no disconnected duplicate image set is created.',
+    }]
+  }
   return [
     {
-      path: format === 'pdf' ? 'document.md' : 'book.md',
-      format: 'Markdown',
-      description: 'Canonical document with stable page, chapter, and figure identifiers.',
+      path: 'assets/*.{png,jpg,gif,webp,svg}',
+      format: 'Images',
+      description: 'Sanitized standalone graphics referenced by stable figure identifiers.',
+      optional: true,
     },
     {
-      path: format === 'pdf' ? 'pages/PAGE-*.md' : 'chapters/*.md',
+      path: 'notebooklm/{Book title}.figure-index.md',
       format: 'Markdown',
-      description: 'Bounded, independently indexable retrieval units.',
+      description: 'Maps each figure to its reading position and nearby text.',
     },
-    ...(format === 'pdf'
-      ? [
-          pdfPrimary(),
-          {
-            path: 'sections/*.md',
-            format: 'Markdown',
-            description: 'Outline-derived PDF sections when a usable outline exists.',
-            optional: true,
-          },
-          {
-            path: 'OUTLINE.md',
-            format: 'Markdown',
-            description: 'Stable PDF outline-to-page mapping.',
-            optional: true,
-          },
-        ]
-      : [
-          {
-            path: 'assets/*.{png,jpg,gif,webp,svg}',
-            format: 'Images',
-            description: 'Sanitized graphics referenced by stable figure identifiers.',
-            optional: true,
-          },
-          {
-            path: 'notebooklm/FIGURE-INDEX.md',
-            format: 'Markdown',
-            description: 'Figure-to-context mapping for multimodal retrieval.',
-          },
-        ]),
-    {
-      path: 'notebooklm/LLM-SAFETY-REPORT.md',
-      format: 'Markdown',
-      description: 'Instruction-like source passages retained for review.',
-      optional: format === 'pdf',
-    },
-    ...COMMON_REPORTS,
   ]
 }
 
-function markdownOutputs(format: DocumentFormat): readonly OutputFileSpec[] {
-  return [
-    {
-      path: format === 'pdf' ? 'document.md' : 'book.md',
-      format: 'Markdown',
-      description: 'One readable document with stable visual references.',
-    },
-    ...(format === 'pdf'
-      ? [pdfPrimary()]
-      : [
-          {
-            path: 'assets/*.{png,jpg,gif,webp,svg}',
-            format: 'Images',
-            description: 'Sanitized graphics referenced from the Markdown document.',
-            optional: true,
-          },
-        ]),
-    ...COMMON_REPORTS,
-  ]
+export function outputsForProfile(profile: OutputProfileId): readonly OutputSelectionId[] {
+  return OUTPUT_PROFILES.find((candidate) => candidate.id === profile)?.outputs ?? []
+}
+
+export function outputFilesForSelection(
+  outputs: readonly OutputSelectionId[],
+  format: DocumentFormat,
+): readonly OutputFileSpec[] {
+  const selected: OutputFileSpec[] = []
+  if (outputs.includes('visual-source')) selected.push(...visualSourceOutputs(format))
+  if (outputs.includes('markdown')) selected.push(...markdownOutputs())
+  if (outputs.includes('chunks')) selected.push(...chunkOutputs(format))
+  if (outputs.includes('assets')) selected.push(...assetOutputs(format))
+  selected.push(...COMMON_REPORTS)
+  return selected.filter((candidate, index, all) =>
+    all.findIndex((existing) => existing.path === candidate.path) === index)
 }
 
 export function profileOutputFiles(
   profile: OutputProfileId,
   format: DocumentFormat,
 ): readonly OutputFileSpec[] {
-  switch (profile) {
-    case 'notebooklm':
-      return notebookOutputs(format)
-    case 'rag':
-      return ragOutputs(format)
-    case 'markdown':
-      return markdownOutputs(format)
-    case 'archive':
-      return [
-        ...notebookOutputs(format),
-        ...ragOutputs(format).filter((candidate) =>
-          !notebookOutputs(format).some((existing) => existing.path === candidate.path)),
-        ...markdownOutputs(format).filter((candidate) =>
-          !notebookOutputs(format).some((existing) => existing.path === candidate.path) &&
-          !ragOutputs(format).some((existing) => existing.path === candidate.path)),
-      ]
-  }
+  return outputFilesForSelection(outputsForProfile(profile), format)
+}
+
+export function selectionNeedsVisualCompanion(
+  outputs: readonly OutputSelectionId[],
+  format: DocumentFormat,
+): boolean {
+  return format === 'pdf' && (
+    outputs.includes('visual-source') ||
+    outputs.includes('assets')
+  )
 }
 
 export function profileNeedsVisualCompanion(
   profile: OutputProfileId,
   format: DocumentFormat,
 ): boolean {
-  return format === 'pdf' || profile === 'notebooklm' || profile === 'archive'
+  return selectionNeedsVisualCompanion(outputsForProfile(profile), format)
 }

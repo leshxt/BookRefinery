@@ -406,7 +406,7 @@ export async function convertDocument(
         ? convertFb2Zip(bytes, sourceName, onProgress)
         : convertEpub(bytes, sourceName, onProgress)
   onProgress({ percent: 98, label: 'Applying the selected output profile' })
-  const result = await packageConversionResult(rawResult, options.profile)
+  const result = await packageConversionResult(rawResult, options)
   onProgress({ percent: 100, label: 'Preparation complete' })
   return result
 }

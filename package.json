@@ -1,7 +1,7 @@
 {
   "name": "bookrefinery",
   "private": true,
-  "version": "0.6.2",
+  "version": "0.7.0",
   "description": "Local-first EPUB, FB2, and PDF sanitizer for searchable, multimodal LLM source packages.",
   "author": {
     "name": "leshxt",
@@ -44,7 +44,7 @@
   "dependencies": {
     "@tesseract.js-data/deu": "1.0.0",
     "@tesseract.js-data/eng": "1.0.0",
-    "fast-xml-parser": "5.10.0",
+    "fast-xml-parser": "5.10.1",
     "fflate": "0.8.3",
     "node-html-markdown": "2.0.0",
     "pdf-lib": "1.17.1",
@@ -64,6 +64,11 @@
     "typescript": "7.0.2",
     "vite": "8.1.4",
     "vitest": "4.1.10"
+  },
+  "overrides": {
+    "brace-expansion": "5.0.8",
+    "fast-uri": "3.1.4",
+    "tar": "7.5.22"
   },
   "build": {
     "appId": "io.github.leshxt.bookrefinery",

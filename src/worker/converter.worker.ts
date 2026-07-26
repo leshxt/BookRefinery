@@ -4,6 +4,7 @@ import { GlobalWorkerOptions } from 'pdfjs-dist/legacy/build/pdf.mjs'
 import pdfWorkerUrl from 'pdfjs-dist/legacy/build/pdf.worker.min.mjs?url'
 import {
   OUTPUT_PROFILE_IDS,
+  OUTPUT_SELECTION_IDS,
   type ConversionOptions,
   type OcrLanguage,
 } from '../core/contracts'
@@ -19,8 +20,12 @@ function isConversionOptions(value: unknown): value is ConversionOptions {
   if (typeof value !== 'object' || value === null) return false
   const candidate = value as Record<string, unknown>
   const ocr = candidate['ocr']
+  const outputs = candidate['outputs']
   if (
-    !OUTPUT_PROFILE_IDS.includes(candidate['profile'] as never) ||
+    !(candidate['profile'] === 'custom' || OUTPUT_PROFILE_IDS.includes(candidate['profile'] as never)) ||
+    !Array.isArray(outputs) ||
+    outputs.length === 0 ||
+    !outputs.every((output) => OUTPUT_SELECTION_IDS.includes(output as never)) ||
     typeof ocr !== 'object' ||
     ocr === null
   ) {

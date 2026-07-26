@@ -156,8 +156,8 @@ describe('secure EPUB conversion', () => {
     expect(llmBook.indexOf('FIG\\-0001')).toBeLessThan(llmBook.indexOf('After the diagram.'))
     expect(figureIndex).toContain('CHAPTER\\-001 Chapter one')
     expect(figureIndex).toContain('Flow chart — Decision path')
-    expect(notebookGuide).toContain('Start with **`book.sanitized.epub` only**')
-    expect(notebookGuide).toContain('Do not select both by default')
+    expect(notebookGuide).toContain('Start with **`Sicheres Testbuch.sanitized.epub` only**')
+    expect(notebookGuide).toContain('Do not upload both by default')
     expect(strFromU8(visualEpub['mimetype']!)).toBe('application/epub+zip')
     expect(readEpubPackage(openSecureArchive(output['notebooklm/book.sanitized.epub']!).entries).title).toContain('Sicheres Testbuch')
     expect(Object.keys(visualEpub)).toContain('EPUB/assets/FIG-0001-cover.png')
@@ -249,7 +249,7 @@ describe('secure PDF conversion', () => {
   it('extracts text pages into a passive Markdown bundle', async () => {
     const result = await convertDocument(makePdf([['Hallo PDF', 'Zweite Zeile'], ['Seite zwei']]), 'test.pdf')
     const output = unzipSync(result.archive)
-    const document = strFromU8(output['document.md']!)
+    const document = strFromU8(output['Test PDF.md']!)
 
     expect(result.summary.format).toBe('pdf')
     expect(result.summary.units).toBe(2)
@@ -257,13 +257,13 @@ describe('secure PDF conversion', () => {
     expect(document).toContain('## PAGE-0001 — Page 1')
     expect(document).toContain('Hallo PDF')
     expect(document).toContain('## PAGE-0002 — Page 2')
-    expect(Object.keys(output)).toContain('notebooklm/document.md')
-    expect(Object.keys(output)).toContain('SECURITY-REPORT.md')
+    expect(Object.keys(output)).toContain('notebooklm/Test PDF.md')
+    expect(Object.keys(output)).toContain('Test PDF.security-report.md')
   })
 
   it('neutralizes URLs found in PDF text', async () => {
     const result = await convertDocument(makePdf([['Visit https://attacker.invalid/path now']]), 'links.pdf')
-    const document = strFromU8(unzipSync(result.archive)['document.md']!)
+    const document = strFromU8(unzipSync(result.archive)['Test PDF.md']!)
 
     expect(document).toContain('external URL removed')
     expect(document).not.toContain('attacker.invalid')
@@ -281,9 +281,9 @@ describe('secure FB2 conversion', () => {
   ] as const)('converts a %s FB2 with graphics and notes', async (_label, zipped) => {
     const result = await convertDocument(makeFb2({ zipped }), zipped ? 'visual.fb2.zip' : 'visual.fb2')
     const output = unzipSync(result.archive)
-    const book = strFromU8(output['book.md']!)
-    const llmBook = strFromU8(output['notebooklm/book.md']!)
-    const visualEpub = unzipSync(output['notebooklm/book.sanitized.epub']!)
+    const book = strFromU8(output['Visual FB2 Test.md']!)
+    const llmBook = strFromU8(output['notebooklm/Visual FB2 Test.md']!)
+    const visualEpub = unzipSync(output['notebooklm/Visual FB2 Test.sanitized.epub']!)
 
     expect(result.summary.format).toBe('fb2')
     expect(result.summary.assets).toBe(2)

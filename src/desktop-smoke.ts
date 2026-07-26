@@ -23,10 +23,10 @@ export async function runDesktopSmokeTest(): Promise<DesktopSmokeResult> {
 
   const session = await LocalOcrSession.create(['eng'], () => {})
   try {
-    const recognizedText = await session.recognize(canvas)
+    const recognition = await session.recognize(canvas)
     return {
-      ocrInitialized: /(?:LOCAL|OCR|TEST|123)/iu.test(recognizedText),
-      recognizedText: recognizedText.slice(0, 120),
+      ocrInitialized: /(?:LOCAL|OCR|TEST|123)/iu.test(recognition.text),
+      recognizedText: recognition.text.slice(0, 120),
     }
   } finally {
     await session.terminate()
@@ -49,6 +49,7 @@ export async function runDesktopPdfSmokeTest(): Promise<{
     () => {},
     {
       profile: 'notebooklm',
+      outputs: ['visual-source'],
       ocr: { enabled: false, languages: ['eng', 'deu'] },
     },
   )
