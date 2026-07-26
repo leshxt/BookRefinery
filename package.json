@@ -49,8 +49,8 @@
     "node-html-markdown": "2.0.0",
     "pdf-lib": "1.17.1",
     "pdfjs-dist": "6.1.200",
-    "react": "19.2.7",
-    "react-dom": "19.2.7",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
     "tesseract.js": "7.0.0"
   },
   "devDependencies": {
