@@ -12,6 +12,18 @@ remote resources, forms, attachments, and active markup do not enter the prepare
 
 ![BookRefinery private ebook preparation workspace](docs/assets/bookrefinery-ui.png)
 
+## Download
+
+| Platform | Direct download |
+|---|---|
+| Windows 10/11 (x64) | [BookRefinery installer (`.exe`)](https://github.com/leshxt/BookRefinery/releases/latest/download/BookRefinery-Windows-x64.exe) |
+| Linux (x86_64) | [Portable AppImage](https://github.com/leshxt/BookRefinery/releases/latest/download/BookRefinery-Linux-x86_64.AppImage) |
+| Debian / Ubuntu (amd64) | [Debian package (`.deb`)](https://github.com/leshxt/BookRefinery/releases/latest/download/BookRefinery-Linux-amd64.deb) |
+
+These links always download the assets from the
+[latest stable GitHub release](https://github.com/leshxt/BookRefinery/releases/latest). The community
+packages are currently unsigned, so Windows or Linux may ask for confirmation before installation.
+
 ## What it prepares
 
 | Input | Preserved output | Structure |
@@ -91,8 +103,9 @@ Open the local URL printed by Vite, normally `http://localhost:5173`.
 Native packages are published on the
 [GitHub Releases page](https://github.com/leshxt/BookRefinery/releases):
 
-- **Windows:** download the `BookRefinery-...-win-x64.exe` NSIS installer.
-- **Linux:** download the `.AppImage` for a portable launch or the `.deb` package for Debian/Ubuntu.
+- **Windows:** download `BookRefinery-Windows-x64.exe`.
+- **Linux:** download `BookRefinery-Linux-x86_64.AppImage` for a portable launch or
+  `BookRefinery-Linux-amd64.deb` for Debian/Ubuntu.
 
 The desktop edition bundles its own current Electron/Chromium runtime instead of using Microsoft
 WebView2. Its private renderer session denies every remote request, DNS is mapped to failure,
@@ -131,8 +144,9 @@ Use `npm run desktop:build:linux` on Linux. `npm run verify:desktop` checks the 
 desktop request/save boundary, production build, and all npm dependencies.
 
 Linux bundles are built on Ubuntu 22.04 in the release workflow for a stable glibc baseline.
-Pushing a `desktop-v*` tag, or manually starting **Build desktop installers**, creates a prerelease
-with the Windows NSIS installer, Linux AppImage, and Debian package.
+Pushing a `desktop-v*` tag creates the latest stable release with the Windows NSIS installer, Linux
+AppImage, and Debian package. Manually starting **Build desktop installers** builds and verifies the
+packages without publishing a release.
 
 ## Security model
 

@@ -87,12 +87,18 @@ jobs:
           path: release-artifacts
           merge-multiple: true
 
-      - name: Publish prerelease
+      - name: Give release assets stable download names
+        run: |
+          mv release-artifacts/BookRefinery-*-win-x64.exe release-artifacts/BookRefinery-Windows-x64.exe
+          mv release-artifacts/BookRefinery-*-linux-x86_64.AppImage release-artifacts/BookRefinery-Linux-x86_64.AppImage
+          mv release-artifacts/BookRefinery-*-linux-amd64.deb release-artifacts/BookRefinery-Linux-amd64.deb
+
+      - name: Publish stable release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release create "$GITHUB_REF_NAME" release-artifacts/* \
             --repo "$GITHUB_REPOSITORY" \
             --title "BookRefinery Desktop ${GITHUB_REF_NAME#desktop-v}" \
-            --prerelease \
+            --latest \
             --notes "Bundled Windows and Linux editions. No WebView2 dependency, updater, telemetry, or application network access. The dedicated renderer is sandboxed and every remote request is denied. The app is unsigned; verify that the asset comes from this repository."
