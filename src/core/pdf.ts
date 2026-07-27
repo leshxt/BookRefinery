@@ -660,7 +660,7 @@ export async function convertPdf(
         pageNumber,
         id,
         plain,
-        markdown: `## ${id} — Page ${pageNumber}\n\n${pageMarkdown || '[No extractable text layer]'}`,
+        markdown: `## ${id} - Page ${pageNumber}\n\n${pageMarkdown || '[No extractable text layer]'}`,
       })
       page.cleanup()
 
@@ -716,7 +716,7 @@ export async function convertPdf(
     ].filter(Boolean).join('\n\n')
     const outlineIndex = outlineSections.length
       ? `## Document outline\n\n${outlineSections
-          .map((section) => `- ${safeMarkdownText(section.title)} — PAGE-${String(section.pageNumber).padStart(4, '0')}`)
+          .map((section) => `- ${safeMarkdownText(section.title)} - PAGE-${String(section.pageNumber).padStart(4, '0')}`)
           .join('\n')}\n\n---\n\n`
       : ''
     const markdown = `${header}\n\n---\n\n${outlineIndex}${pageSections
@@ -750,7 +750,7 @@ export async function convertPdf(
     }
     if (outlineSections.length > 0) {
       files['OUTLINE.md'] = strToU8(`# PDF outline\n\n${outlineSections
-        .map((section) => `- ${safeMarkdownText(section.title)} — PAGE-${String(section.pageNumber).padStart(4, '0')}`)
+        .map((section) => `- ${safeMarkdownText(section.title)} - PAGE-${String(section.pageNumber).padStart(4, '0')}`)
         .join('\n')}\n`)
       for (const [index, section] of outlineSections.entries()) {
         const next = outlineSections[index + 1]

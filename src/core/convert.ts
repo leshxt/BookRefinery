@@ -1,10 +1,11 @@
 import { strToU8, zipSync } from 'fflate'
-import { openSecureArchive } from './archive'
+import { openRecoverableArchive } from './archive'
 import {
   DEFAULT_CONVERSION_OPTIONS,
   type ConversionOptions,
+  type DocumentRepairSummary,
 } from './contracts'
-import { readEpubPackage, type ManifestItem } from './epub'
+import { openRepairableEpub, type ManifestItem } from './epub'
 import { SecurityError } from './errors'
 import { convertFb2, convertFb2Zip } from './fb2'
 import { figureId, outputAssetName, outputAssetPath, rasterDescriptor } from './images'
@@ -20,6 +21,7 @@ import { packageConversionResult } from './manifest'
 import { archiveDirname, resolveArchiveReference, safeOutputName } from './path'
 import { convertPdf } from './pdf'
 import { SECURITY_POLICY } from './policy'
+import { repairReportMarkdown } from './repair'
 import { sanitizeSvg } from './svg'
 import { decodeUtf8, stripInertDocumentTypes } from './xml'
 
@@ -50,6 +52,7 @@ export interface ConversionSummary {
   readonly ocrPages?: number
   readonly repairedTextPages?: number
   readonly repairedGlyphs?: number
+  readonly repair?: DocumentRepairSummary
   readonly warnings: readonly string[]
 }
 
@@ -66,7 +69,7 @@ function markdownInline(value: string): string {
   return value
     .replace(/[\u0000-\u001f\u007f]/gu, ' ')
     .replace(/\s+/gu, ' ')
-    .replace(/([\\`*_[\]{}()#+.!|>~-])/gu, '\\$1')
+    .replace(/([\\`*_[\]{}()#+.!|>~])/gu, '\\$1')
     .replace(/</gu, '&lt;')
     .replace(/>/gu, '&gt;')
     .trim()
@@ -131,12 +134,29 @@ export function convertEpub(
   onProgress: ProgressReporter = () => undefined,
 ): ConversionResult {
   onProgress({ percent: 8, label: 'Checking archive structure' })
-  const archive = openSecureArchive(bytes)
+  const source = openRepairableEpub(bytes)
+  const { archive, epub } = source
 
   onProgress({ percent: 20, label: 'Validating the EPUB package' })
-  const epub = readEpubPackage(archive.entries)
-  const warnings = [...epub.warnings]
+  const warnings = [
+    ...epub.warnings,
+    ...(source.repair
+      ? [
+          source.repair.level === 'salvage'
+            ? 'The damaged EPUB was processed in clearly marked salvage mode; verify completeness and reading order.'
+            : 'The damaged EPUB structure was repaired automatically before strict processing.',
+        ]
+      : []),
+  ]
   const outputFiles: Record<string, Uint8Array> = {}
+  if (source.repair) {
+    outputFiles['REPAIR-REPORT.md'] = strToU8(
+      repairReportMarkdown(sourceName, source.repair, Boolean(source.repairedSourceBytes)),
+    )
+    if (source.repairedSourceBytes) {
+      outputFiles['repair/source.repaired.epub'] = source.repairedSourceBytes
+    }
+  }
   const assetTargets = new Map<string, AssetTarget>()
   const assetsByOutputPath = new Map<string, LlmAsset>()
   let assetSequence = 0
@@ -338,6 +358,7 @@ export function convertEpub(
     inputBytes: bytes.byteLength,
     processedBytes: archive.uncompressedBytes,
     outputBytes: 0,
+    ...(source.repair ? { repair: source.repair } : {}),
     warnings: uniqueWarnings,
   }
   outputFiles['SECURITY-REPORT.md'] = strToU8(reportMarkdown(provisionalSummary, sourceName))
@@ -373,7 +394,7 @@ export function detectInputFormat(bytes: Uint8Array, sourceName: string): InputF
 
   const isZip = bytes.byteLength >= 4 && bytes[0] === 0x50 && bytes[1] === 0x4b
   if (isZip) {
-    const archive = openSecureArchive(bytes)
+    const archive = openRecoverableArchive(bytes)
     if (archive.entries.has('META-INF/container.xml')) return 'epub'
     const fb2Files = [...archive.entries.keys()].filter((path) => path.toLocaleLowerCase('en-US').endsWith('.fb2'))
     if (fb2Files.length > 0 || sourceName.toLocaleLowerCase('en-US').endsWith('.fb2.zip')) return 'fb2zip'

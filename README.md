@@ -2,13 +2,14 @@
 
 ![BookRefinery logo](docs/assets/bookrefinery-wordmark-card.png)
 
-**Safe ebook preparation for NotebookLM, RAG, Markdown, and long-term archives — local,
+**Safe ebook preparation for NotebookLM, RAG, Markdown, and long-term archives - local,
 multimodal, and built for untrusted input.**
 
 BookRefinery is a local browser and native desktop app by [`leshxt`](https://github.com/leshxt). It
-inspects, sanitizes, automatically recovers missing PDF text, and restructures EPUB, FictionBook 2, and PDF ebooks without
-uploading them. Searchable text remains connected to essential graphics and page visuals; scripts,
-remote resources, forms, attachments, and active markup do not enter the prepared output.
+inspects, safely repairs recoverable ebook containers, sanitizes content, recovers missing PDF text,
+and restructures EPUB, FictionBook 2, and PDF ebooks without uploading them. Searchable text remains
+connected to essential graphics and page visuals; scripts, remote resources, forms, attachments, and
+active markup do not enter the prepared output.
 
 ![BookRefinery private ebook preparation workspace](docs/assets/bookrefinery-ui.png)
 
@@ -33,9 +34,10 @@ packages are currently unsigned, so Windows or Linux may ask for confirmation be
 | PDF | Page-faithful sanitized PDF, rebuilt searchable text layer, Markdown | Stable `PAGE-xxxx` files, detected headings and columns, optional outline sections |
 
 Preflight runs in a disposable worker before conversion. It reports format, title, page or chapter
-count, graphics, text coverage, decompressed size, warnings, and whether local OCR is recommended.
-Up to 20 books can then be queued and processed sequentially, each with independent limits and
-cancellation. Sequential conversion keeps large PDF batches from exhausting memory.
+count, graphics, text coverage, decompressed size, warnings, repair availability, and whether local
+OCR is recommended. Up to 100 books can then be queued and processed sequentially, each with
+independent limits and cancellation. Sequential conversion keeps large PDF batches from exhausting
+memory.
 
 ## Selectable outputs and presets
 
@@ -57,6 +59,21 @@ SHA-256 manifest files.
 For NotebookLM, the sanitized EPUB or PDF remains the recommended single-source upload. Select
 Complete Markdown only as a fallback when the target tool cannot use the visual source or text
 retrieval is insufficient; uploading both by default can create duplicate passages and citations.
+
+## Safe ebook repair
+
+Damaged EPUB and compressed FB2 files first pass the strict archive reader. Only structurally broken
+ZIP containers enter the bounded repair path; files already rejected for unsafe paths, excessive
+sizes, suspicious compression ratios, encryption, or other policy violations never bypass those
+checks. BookRefinery can reconstruct verified ZIP directories, missing EPUB `mimetype` and
+`container.xml` records, safe manifest media types, and an otherwise missing reading order when the
+result is unambiguous.
+
+Every recovered entry must still pass path, size, compression, decompression, and CRC checks. The
+original file is never overwritten. The result includes a title-based repair report and, when the
+container can be rebuilt without changing package semantics, a repaired source copy. If an incomplete
+trailing entry must be omitted or reading order must be inferred, the app labels the result as
+salvage instead of silently presenting it as complete. Ambiguous repairs are refused.
 
 ## Automatic full-book text recovery
 
@@ -155,6 +172,7 @@ BookRefinery treats every input as hostile:
 - preflight and conversion run in disposable workers;
 - ordinary conversion has a 120-second watchdog; automatic OCR has a separate bounded timeout;
 - every batch item receives independent path, archive, page, pixel, text, and output limits;
+- archive repair is bounded, CRC-verified, documented, and never bypasses a security rejection;
 - ZIP paths, entry counts, sizes, compression ratios, XML entities, and DTDs are checked;
 - PDF.js receives local bytes only; fetching, XFA, browser decoders, system fonts, and annotations
   are disabled;
@@ -167,7 +185,9 @@ BookRefinery treats every input as hostile:
 - every result contains security records and a SHA-256 output inventory.
 
 See [SECURITY.md](SECURITY.md) for the threat model and
-[docs/SECURITY-HARDENING.md](docs/SECURITY-HARDENING.md) for the upstream comparison.
+[docs/SECURITY-HARDENING.md](docs/SECURITY-HARDENING.md) for the upstream comparison. The current
+[repository and code security audit](docs/SECURITY-AUDIT-2026-07-27.md) records verified controls,
+open repository settings, commands, and limitations.
 “Hardened” is not an absolute guarantee; use a current browser and a disposable browser profile or
 virtual machine for exceptionally hostile material.
 
@@ -180,8 +200,9 @@ npm run verify
 
 `npm run verify` runs the unit/integration corpus, TypeScript build, production PWA build, and
 high-severity production dependency audit. The test corpus includes deterministic malformed binary
-inputs, archive traversal, XML entities, prompt-injection-like book passages, profile contracts,
-manifest checksums, PDF text extraction, Unicode searchable PDFs, and layout heuristics.
+inputs, damaged-archive repair, ambiguous repair refusal, archive traversal, XML entities,
+prompt-injection-like book passages, profile contracts, manifest checksums, PDF text extraction,
+Unicode searchable PDFs, and layout heuristics.
 
 Native changes additionally run syntax, request-policy, IPC/save-boundary, and dependency checks in CI.
 

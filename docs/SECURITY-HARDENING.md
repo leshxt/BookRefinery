@@ -11,7 +11,7 @@ The baseline inspected on 14 July 2026 was upstream commit
 | Area | Baseline behavior | BookRefinery |
 |---|---|---|
 | Dependency state | Frozen lock contained 16 production advisories during the audit | Current exact versions; npm audit is a required local and CI gate |
-| ZIP handling | Whole archive synchronously expanded without resource limits | Size, count and compression-ratio checks plus a disposable worker |
+| ZIP handling | Whole archive synchronously expanded without resource limits | Size, count and compression-ratio checks plus a disposable worker; bounded CRC-verified repair for unambiguous structural damage |
 | Archive paths | No dedicated canonical path boundary | Rejects traversal, absolute paths, backslashes and case collisions |
 | XML | Entity processing remained reachable | Entities and DTD declarations rejected; entity processing disabled |
 | Remote resources | Optional localization fetched referenced URLs | No network feature; CSP permits only bundled same-origin OCR assets and the desktop session rejects every remote request |
@@ -70,6 +70,20 @@ under individual and aggregate limits, raster signatures are verified and SVG is
 same canonical Markdown and rebuilt visual EPUB contract used for EPUB is then generated from the
 safe intermediate representation; source XML is never copied to the companion.
 
+## Repair-specific design
+
+The normal archive reader remains the first gate. Only its generic structural-damage result may enter
+repair, so traversal, duplicate paths, expansion limits, and suspicious compression do not receive a
+fallback path. The repair parser supports stored and deflated entries, checks declared sizes before
+decompression, bounds output buffers, verifies CRC values, and reconstructs a canonical archive from
+complete entries. Encrypted entries, multi-disk archives, ZIP64 recovery, unsafe or duplicate paths,
+legacy filename ambiguity, and unverifiable data-descriptor boundaries are rejected.
+
+EPUB package repair can add a missing `mimetype`, rebuild `container.xml` only from one valid OPF,
+infer a missing media type from a safe local extension, and reconstruct reading order from the
+manifest as explicitly marked salvage. A report records every action; a repaired source copy is
+included only when the container can be rebuilt without silently rewriting package semantics.
+
 ## SVG-specific design
 
 SVG is XML and can also be active web content. BookRefinery therefore never copies an SVG
@@ -89,8 +103,9 @@ appendix so sanitization does not silently discard potentially meaningful inform
 
 ## Verification
 
-The automated suite covers normal conversion plus traversal paths, duplicate archive names,
-extreme compression, XML entities, legacy EPUB 2 doctypes, active HTML, hostile SVG, visual SVG
+The automated suite covers normal conversion plus truncated ZIP records, missing directories,
+incomplete trailing entries, unsupported or ambiguous repair cases, traversal paths, duplicate
+archive names, extreme compression, XML entities, legacy EPUB 2 doctypes, active HTML, hostile SVG, visual SVG
 spine items, FB2 notes/images/Base64 mismatches, remote URLs, PDF text extraction and searchable PDF
 rebuilding. It also includes seeded unknown-binary fuzz cases, profile/manifest contracts, PDF
 layout/outline regression fixtures and PWA asset-integrity checks. The full

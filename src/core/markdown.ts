@@ -65,7 +65,7 @@ function imageLabel(node: ImageElement): string {
     .map((value) => value ? escapeLabel(value) : '')
     .filter(Boolean)
 
-  return [...new Set(candidates)].join(' — ').slice(0, 300) || 'Image'
+  return [...new Set(candidates)].join(' - ').slice(0, 300) || 'Image'
 }
 
 export function xhtmlToSafeMarkdown(

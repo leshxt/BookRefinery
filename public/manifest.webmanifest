@@ -1,7 +1,7 @@
 {
   "name": "BookRefinery",
   "short_name": "BookRefinery",
-  "description": "Inspect, sanitize, OCR, and prepare EPUB, FB2, and PDF ebooks locally for LLMs and safe archives.",
+  "description": "Inspect, repair, sanitize, OCR, and prepare EPUB, FB2, and PDF ebooks locally for LLMs and safe archives.",
   "id": "./",
   "start_url": "./",
   "scope": "./",

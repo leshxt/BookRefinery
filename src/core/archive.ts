@@ -2,11 +2,18 @@ import { unzipSync, type UnzipFileInfo } from 'fflate'
 import { SecurityError } from './errors'
 import { validateArchiveEntryName } from './path'
 import { SECURITY_POLICY } from './policy'
+import { repairZipArchive } from './repair'
+import type { DocumentRepairSummary } from './contracts'
 
 export interface SecureArchive {
   readonly entries: ReadonlyMap<string, Uint8Array>
   readonly entryCount: number
   readonly uncompressedBytes: number
+}
+
+export interface RecoverableArchive extends SecureArchive {
+  readonly sourceBytes: Uint8Array
+  readonly repair?: DocumentRepairSummary
 }
 
 function assertZipSignature(bytes: Uint8Array): void {
@@ -88,4 +95,25 @@ export function openSecureArchive(bytes: Uint8Array): SecureArchive {
   }
 
   return { entries, entryCount, uncompressedBytes: actualBytes }
+}
+
+export function openRecoverableArchive(bytes: Uint8Array): RecoverableArchive {
+  try {
+    return { ...openSecureArchive(bytes), sourceBytes: bytes }
+  } catch (error) {
+    if (
+      !(error instanceof SecurityError) ||
+      error.code !== 'INVALID_DOCUMENT' ||
+      !error.message.startsWith('The ZIP archive is damaged')
+    ) {
+      throw error
+    }
+
+    const repaired = repairZipArchive(bytes)
+    return {
+      ...openSecureArchive(repaired.bytes),
+      sourceBytes: repaired.bytes,
+      repair: repaired.summary,
+    }
+  }
 }

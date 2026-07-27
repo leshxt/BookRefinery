@@ -1,5 +1,10 @@
+import { strToU8 } from 'fflate'
+import { openRecoverableArchive, openSecureArchive, type SecureArchive } from './archive'
+import type { DocumentRepairSummary, RepairLevel } from './contracts'
 import { SecurityError } from './errors'
 import { archiveDirname, resolveArchiveReference } from './path'
+import { SECURITY_POLICY } from './policy'
+import { buildCanonicalZip, mergeRepairSummaries } from './repair'
 import { asRecords, isRecord, parseXmlSecure, readText } from './xml'
 
 export interface ManifestItem {
@@ -17,6 +22,16 @@ export interface EpubPackage {
   readonly manifest: readonly ManifestItem[]
   readonly spine: readonly ManifestItem[]
   readonly warnings: readonly string[]
+  readonly repairs: readonly string[]
+  readonly repairLevel?: RepairLevel
+}
+
+export interface RepairableEpub {
+  readonly archive: SecureArchive
+  readonly epub: EpubPackage
+  readonly sourceBytes: Uint8Array
+  readonly repairedSourceBytes?: Uint8Array
+  readonly repair?: DocumentRepairSummary
 }
 
 function requireRecord(value: unknown, message: string): Record<string, unknown> {
@@ -33,6 +48,35 @@ function firstText(value: unknown): string | undefined {
     return undefined
   }
   return readText(value)
+}
+
+function inferMediaType(path: string): string | undefined {
+  const extension = path.split('.').at(-1)?.toLocaleLowerCase('en-US')
+  switch (extension) {
+    case 'xhtml':
+    case 'xht':
+      return 'application/xhtml+xml'
+    case 'html':
+    case 'htm':
+      return 'text/html'
+    case 'svg':
+      return 'image/svg+xml'
+    case 'png':
+      return 'image/png'
+    case 'jpg':
+    case 'jpeg':
+      return 'image/jpeg'
+    case 'gif':
+      return 'image/gif'
+    case 'webp':
+      return 'image/webp'
+    case 'css':
+      return 'text/css'
+    case 'ncx':
+      return 'application/x-dtbncx+xml'
+    default:
+      return undefined
+  }
 }
 
 function findPackagePath(entries: ReadonlyMap<string, Uint8Array>, warnings: string[]): string {
@@ -63,6 +107,7 @@ function findPackagePath(entries: ReadonlyMap<string, Uint8Array>, warnings: str
 
 export function readEpubPackage(entries: ReadonlyMap<string, Uint8Array>): EpubPackage {
   const warnings: string[] = []
+  const repairs: string[] = []
   const mimetype = entries.get('mimetype')
   const mimetypeValue = mimetype ? new TextDecoder().decode(mimetype) : ''
   if (mimetypeValue !== 'application/epub+zip') {
@@ -88,8 +133,7 @@ export function readEpubPackage(entries: ReadonlyMap<string, Uint8Array>): EpubP
   for (const item of asRecords(manifestNode['item'])) {
     const id = item['id']
     const href = item['href']
-    const mediaType = item['media-type']
-    if (typeof id !== 'string' || typeof href !== 'string' || typeof mediaType !== 'string') continue
+    if (typeof id !== 'string' || typeof href !== 'string') continue
 
     let path: string
     try {
@@ -99,10 +143,24 @@ export function readEpubPackage(entries: ReadonlyMap<string, Uint8Array>): EpubP
       warnings.push(`Ignored manifest item "${id}" because its path is unsafe.`)
       continue
     }
+    const declaredMediaType = typeof item['media-type'] === 'string'
+      ? (item['media-type'].split(';', 1)[0] ?? item['media-type']).trim().toLocaleLowerCase('en-US')
+      : ''
+    const inferredMediaType = inferMediaType(path)
+    const mediaType = declaredMediaType && declaredMediaType !== 'application/octet-stream'
+      ? declaredMediaType
+      : inferredMediaType
+    if (!mediaType) {
+      warnings.push(`Ignored manifest item "${id}" because its media type is missing or unsupported.`)
+      continue
+    }
+    if (mediaType !== declaredMediaType) {
+      repairs.push(`Inferred ${mediaType} for manifest item "${id}" from its safe archive path.`)
+    }
     const manifestItem: ManifestItem = {
       id,
       path,
-      mediaType: (mediaType.split(';', 1)[0] ?? mediaType).trim().toLocaleLowerCase('en-US'),
+      mediaType,
       properties: typeof item['properties'] === 'string' ? item['properties'].split(/\s+/u) : [],
     }
     if (byId.has(id)) {
@@ -133,12 +191,36 @@ export function readEpubPackage(entries: ReadonlyMap<string, Uint8Array>): EpubP
     }
   }
 
+  let repairLevel: RepairLevel | undefined = repairs.length > 0 ? 'automatic' : undefined
   if (spine.length === 0) {
-    throw new SecurityError('UNSUPPORTED_DOCUMENT', 'The EPUB contains no supported XHTML or image reading-order items.')
+    const fallback = manifest.filter((item) =>
+      entries.has(item.path) &&
+      !item.properties.includes('nav') &&
+      (
+        item.mediaType === 'application/xhtml+xml' ||
+        item.mediaType === 'text/html' ||
+        item.mediaType.startsWith('image/')
+      ))
+    if (fallback.length === 0) {
+      throw new SecurityError('UNSUPPORTED_DOCUMENT', 'The EPUB contains no supported XHTML or image reading-order items.')
+    }
+    spine.push(...fallback)
+    repairLevel = 'salvage'
+    repairs.push(
+      `Reconstructed a ${fallback.length.toLocaleString('en-US')}-item reading order from the safe manifest because the original spine was unusable.`,
+    )
+    warnings.push('Salvage mode reconstructed reading order from manifest order; verify chapter order against another copy if possible.')
   }
 
   const author = firstText(metadata['creator'])
   const language = firstText(metadata['language'])
+  const uniqueRepairs = [...new Set(repairs)]
+  const reportedRepairs = uniqueRepairs.length > SECURITY_POLICY.maxRepairActions
+    ? [
+        ...uniqueRepairs.slice(0, SECURITY_POLICY.maxRepairActions),
+        `Omitted ${uniqueRepairs.length - SECURITY_POLICY.maxRepairActions} additional repetitive repair action(s) from the report.`,
+      ]
+    : uniqueRepairs
 
   return {
     title: firstText(metadata['title']) ?? 'Untitled EPUB',
@@ -148,5 +230,116 @@ export function readEpubPackage(entries: ReadonlyMap<string, Uint8Array>): EpubP
     manifest,
     spine,
     warnings: [...new Set(warnings)],
+    repairs: reportedRepairs,
+    ...(repairLevel ? { repairLevel } : {}),
+  }
+}
+
+function escapeXmlAttribute(value: string): string {
+  return value
+    .replace(/&/gu, '&amp;')
+    .replace(/"/gu, '&quot;')
+    .replace(/</gu, '&lt;')
+    .replace(/>/gu, '&gt;')
+}
+
+function containerDocument(packagePath: string): Uint8Array {
+  return strToU8(`<?xml version="1.0" encoding="UTF-8"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="${escapeXmlAttribute(packagePath)}" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>
+`)
+}
+
+function findUniquePackageRepair(
+  entries: ReadonlyMap<string, Uint8Array>,
+): { readonly packagePath: string; readonly epub: EpubPackage } | null {
+  const candidates: { readonly packagePath: string; readonly epub: EpubPackage }[] = []
+  const packagePaths = [...entries.keys()].filter((path) =>
+    path.toLocaleLowerCase('en-US').endsWith('.opf'))
+  if (packagePaths.length > SECURITY_POLICY.maxRepairOpfCandidates) {
+    throw new SecurityError(
+      'AMBIGUOUS_REPAIR',
+      'The EPUB contains too many possible OPF package documents for a bounded automatic repair.',
+    )
+  }
+  for (const packagePath of packagePaths) {
+    const candidateEntries = new Map(entries)
+    candidateEntries.set('META-INF/container.xml', containerDocument(packagePath))
+    try {
+      candidates.push({ packagePath, epub: readEpubPackage(candidateEntries) })
+    } catch (error) {
+      if (!(error instanceof SecurityError)) throw error
+    }
+  }
+  if (candidates.length > 1) {
+    throw new SecurityError(
+      'AMBIGUOUS_REPAIR',
+      'The EPUB contains more than one plausible OPF package document, so container.xml cannot be rebuilt unambiguously.',
+    )
+  }
+  return candidates[0] ?? null
+}
+
+export function openRepairableEpub(bytes: Uint8Array): RepairableEpub {
+  const recovered = openRecoverableArchive(bytes)
+  const entries = new Map(recovered.entries)
+  const structuralActions: string[] = []
+  const mimetype = entries.get('mimetype')
+  if (!mimetype || new TextDecoder().decode(mimetype) !== 'application/epub+zip') {
+    entries.set('mimetype', strToU8('application/epub+zip'))
+    structuralActions.push('Rebuilt the required uncompressed EPUB mimetype entry.')
+  }
+
+  let epub: EpubPackage
+  try {
+    epub = readEpubPackage(entries)
+  } catch (originalError) {
+    if (!(originalError instanceof SecurityError)) throw originalError
+    const repairedPackage = findUniquePackageRepair(entries)
+    if (!repairedPackage) throw originalError
+    entries.set('META-INF/container.xml', containerDocument(repairedPackage.packagePath))
+    structuralActions.push(
+      `Rebuilt META-INF/container.xml to reference the unique package document "${repairedPackage.packagePath}".`,
+    )
+    epub = readEpubPackage(entries)
+  }
+
+  let sourceBytes = recovered.sourceBytes
+  let structuralRepair: DocumentRepairSummary | undefined
+  if (structuralActions.length > 0) {
+    sourceBytes = buildCanonicalZip(entries)
+    openSecureArchive(sourceBytes)
+    structuralRepair = {
+      level: 'automatic',
+      actions: structuralActions,
+      originalBytes: recovered.sourceBytes.byteLength,
+      repairedBytes: sourceBytes.byteLength,
+      omittedEntries: 0,
+    }
+  }
+
+  const packageRepair: DocumentRepairSummary | undefined = epub.repairs.length > 0
+    ? {
+        level: epub.repairLevel ?? 'automatic',
+        actions: epub.repairs,
+        originalBytes: sourceBytes.byteLength,
+        repairedBytes: sourceBytes.byteLength,
+        omittedEntries: 0,
+      }
+    : undefined
+  const repair = mergeRepairSummaries(
+    mergeRepairSummaries(recovered.repair, structuralRepair),
+    packageRepair,
+  )
+
+  return {
+    archive: openSecureArchive(sourceBytes),
+    epub,
+    sourceBytes,
+    ...(repair ? { repair } : {}),
+    ...(repair && epub.repairs.length === 0 ? { repairedSourceBytes: sourceBytes } : {}),
   }
 }

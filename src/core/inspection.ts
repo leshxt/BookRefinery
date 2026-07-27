@@ -1,7 +1,6 @@
-import { openSecureArchive } from './archive'
 import { detectInputFormat } from './convert'
 import type { DocumentInspection } from './contracts'
-import { readEpubPackage } from './epub'
+import { openRepairableEpub } from './epub'
 import { SecurityError } from './errors'
 import { inspectFb2, inspectFb2Zip } from './fb2'
 import { rasterDescriptor } from './images'
@@ -21,8 +20,8 @@ export async function inspectDocument(
   if (format === 'fb2') return inspectFb2(bytes)
   if (format === 'fb2zip') return inspectFb2Zip(bytes)
 
-  const archive = openSecureArchive(bytes)
-  const epub = readEpubPackage(archive.entries)
+  const source = openRepairableEpub(bytes)
+  const { archive, epub } = source
   const graphics = epub.manifest.filter((item) =>
     Boolean(rasterDescriptor(item.mediaType)) || item.mediaType === 'image/svg+xml').length
   return {
@@ -38,5 +37,6 @@ export async function inspectDocument(
     textCoverage: 'full',
     ocrRecommended: false,
     warnings: epub.warnings,
+    ...(source.repair ? { repair: source.repair } : {}),
   }
 }

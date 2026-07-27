@@ -237,7 +237,7 @@ function createMainWindow(isolatedSession) {
           console.log(`BOOKREFINERY_SMOKE_RESULT=${rawResult}`)
           const result = JSON.parse(rawResult)
           const passed = (
-            result.title === 'BookRefinery — Safe Ebook Preparation for LLMs' &&
+            result.title === 'BookRefinery - Safe Ebook Preparation for LLMs' &&
             result.workspaceVisible === true &&
             result.nativeBridge === true &&
             (isPdfSmokeTest
