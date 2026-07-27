@@ -554,7 +554,7 @@ export function App() {
       <a className="skip-link" href="#workspace">Skip to Private Workspace</a>
       <header className="topbar">
         <div className="brand-lockup">
-          <a className="brand" href="#main" aria-label="BookRefinery — go to the top">
+          <a className="brand" href="#main" aria-label="BookRefinery - go to the top">
             <span className="brand-mark">
               <img src={`${import.meta.env.BASE_URL}bookrefinery-icon.png`} alt="" />
             </span>
@@ -594,8 +594,8 @@ export function App() {
           <div className="eyebrow"><ShieldIcon /> Local ebook refinery · EPUB, FB2 &amp; PDF</div>
           <h1 id="hero-title">Books in.<br /><span>Safe knowledge out.</span></h1>
           <p className="hero-copy">
-            Inspect, sanitize, OCR, and reshape ebooks into trustworthy multimodal sources for
-            NotebookLM, RAG systems, Markdown workflows, or long-term safe storage.
+            Inspect, repair, sanitize, OCR, and reshape ebooks into trustworthy multimodal sources
+            for NotebookLM, RAG systems, Markdown workflows, or long-term safe storage.
           </p>
           <div className="trust-row" aria-label="Product guarantees">
             <span><i>01</i> Never uploaded</span>
@@ -865,6 +865,26 @@ export function App() {
                       </div>
                     )}
 
+                    {inspection?.repair && (
+                      <div className={`inline-notice repair-notice ${inspection.repair.level === 'automatic' ? 'is-positive' : ''}`}>
+                        <strong>
+                          {inspection.repair.level === 'automatic'
+                            ? 'Safe automatic repair available.'
+                            : 'Salvage mode available.'}
+                        </strong>
+                        {' '}
+                        {inspection.repair.level === 'automatic'
+                          ? 'The original stays unchanged; the repaired copy must pass the normal strict conversion.'
+                          : `${inspection.repair.omittedEntries.toLocaleString('en-US')} incomplete archive item(s) will be omitted and documented.`}
+                        <details>
+                          <summary>Show repair plan</summary>
+                          <ul>
+                            {inspection.repair.actions.map((action) => <li key={action}>{action}</li>)}
+                          </ul>
+                        </details>
+                      </div>
+                    )}
+
                     {job.status === 'password' && (
                       <PdfPasswordForm
                         filename={job.file.name}
@@ -892,6 +912,12 @@ export function App() {
                         <div className="result-metrics">
                           <span><strong>{job.result.summary.units.toLocaleString('en-US')}</strong>{job.result.summary.unitLabel}</span>
                           <span><strong>{job.result.summary.ocrPages ?? 0}</strong>OCR pages</span>
+                          {job.result.summary.repair && (
+                            <span>
+                              <strong>{job.result.summary.repair.actions.length}</strong>
+                              {job.result.summary.repair.level === 'salvage' ? 'salvage actions' : 'repairs'}
+                            </span>
+                          )}
                           <span><strong>{formatBytes(job.result.summary.outputBytes)}</strong>ZIP</span>
                         </div>
                         <button type="button" onClick={() => void saveArchive(job.result.archive, job.result.filename)}>

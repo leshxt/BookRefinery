@@ -3,11 +3,11 @@
 BookRefinery is a local ebook-inspection, sanitization, OCR, and LLM-preparation studio. Markdown is
 one portable output, not the product boundary.
 
-## 0.4 — Refinery workflow
+## 0.4 - Refinery workflow
 
 - [x] Isolated preflight with format, metadata, structure, text coverage, graphics, and warnings
 - [x] Four output profiles with exact paths and file formats visible before processing
-- [x] Batch queue for up to 20 books with independent workers, limits, progress, and cancellation
+- [x] Batch queue for up to 100 books with independent workers, limits, progress, and cancellation
 - [x] Persistent per-item results, add-more flow, individual Save As, and combined Save As
 - [x] Default-on bundled English/German full-book OCR with exact textless-page preflight and page, pixel, and runtime budgets
 - [x] Ephemeral per-file password prompt for PDFs that require local unlocking
@@ -17,6 +17,7 @@ one portable output, not the product boundary.
 - [x] Installable production PWA with a versioned complete offline cache
 - [x] Bundled Windows/Linux desktop runtime with remote-request denial and a narrow Save As bridge
 - [x] Deterministic adversarial corpus, fuzz rejection, profile tests, and SHA-256 export manifests
+- [x] Bounded ZIP/EPUB repair with CRC verification, explicit salvage mode, and per-book reports
 
 ## Existing foundations
 

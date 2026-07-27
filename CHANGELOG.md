@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.9.0 - 2026-07-27
+
+- Added bounded automatic repair for damaged EPUB and compressed FB2 ZIP containers with CRC
+  verification, canonical reconstruction, and strict reuse of the normal archive security gate.
+- Added safe EPUB package repair for missing `mimetype` or `container.xml` records and missing
+  manifest media types, plus clearly labeled salvage for incomplete trailing entries or recovered
+  manifest-order reading order.
+- Added title-based repair reports and optional repaired source copies without modifying the input.
+- Increased the sequential queue from 20 to 100 books so 20-book batches fit comfortably while
+  retaining independent per-file security and worker limits.
+- Replaced long dashes in BookRefinery-authored UI, documentation, and generated labels with ordinary
+  hyphens while preserving punctuation that belongs to source book content.
+- Reduced GitHub Actions token permissions and corrected the private security-report link.
+- Updated Electron, Chromium, React, Vite, and the React build plugin to their current compatible
+  patch releases.
+- Added a repository-wide security audit and adversarial repair regression tests.
+
 ## 0.6.2 - 2026-07-17
 
 - Added public GitHub noreply maintainer metadata required by Debian packages.

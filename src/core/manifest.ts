@@ -19,7 +19,12 @@ function keepForSelection(
   outputs: readonly OutputSelectionId[],
   profile: ConversionOptions['profile'],
 ): boolean {
-  if (path === 'SECURITY-REPORT.md' || path === 'notebooklm/LLM-SAFETY-REPORT.md') return true
+  if (
+    path === 'SECURITY-REPORT.md' ||
+    path === 'REPAIR-REPORT.md' ||
+    path === 'notebooklm/LLM-SAFETY-REPORT.md' ||
+    path.startsWith('repair/')
+  ) return true
   if (profile === 'archive' && (path === 'notebooklm/book.md' || path === 'notebooklm/document.md')) {
     return true
   }
@@ -60,6 +65,12 @@ function titledPath(path: string, titleStem: string): string {
       return `notebooklm/${titleStem}.llm-safety-report.md`
     case 'SECURITY-REPORT.md':
       return `${titleStem}.security-report.md`
+    case 'REPAIR-REPORT.md':
+      return `${titleStem}.repair-report.md`
+    case 'repair/source.repaired.epub':
+      return `repair/${titleStem}.repaired.epub`
+    case 'repair/source.repaired.fb2.zip':
+      return `repair/${titleStem}.repaired.fb2.zip`
     case 'OUTLINE.md':
       return `${titleStem}.outline.md`
     default:
@@ -143,6 +154,7 @@ export async function packageConversionResult(
       ...(result.summary.author ? { author: result.summary.author } : {}),
       ...(result.summary.language ? { language: result.summary.language } : {}),
       inputBytes: result.summary.inputBytes,
+      ...(result.summary.repair ? { repair: result.summary.repair } : {}),
     },
     output: {
       units: result.summary.units,

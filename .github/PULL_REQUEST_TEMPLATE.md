@@ -10,7 +10,7 @@
 
 - [ ] `npm run verify`
 - [ ] No upload, telemetry, remote font or CDN dependency was introduced
-- [ ] Parser or sanitizer changes include a regression test
+- [ ] Parser, repair, or sanitizer changes include a regression test
 
 ## Security notes
 

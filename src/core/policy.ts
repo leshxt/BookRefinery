@@ -19,19 +19,21 @@ export const SECURITY_POLICY = {
   maxVisualPdfPixels: 480_000_000,
   maxPdfSourceImagePixels: 20_000_000,
   maxPdfPasswordLength: 1_024,
-  maxBatchFiles: 20,
+  maxBatchFiles: 100,
   maxOcrPages: 500,
   maxOcrPixels: 1_500_000_000,
   maxOcrPagePixels: 4_500_000,
   maxPathLength: 1_024,
   maxPathSegmentLength: 240,
+  maxRepairActions: 100,
+  maxRepairOpfCandidates: 16,
   workerTimeoutMs: 120_000,
   inspectionTimeoutMs: 120_000,
   ocrWorkerTimeoutMs: 3_600_000,
 } as const
 
 export function formatBytes(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes < 0) return '–'
+  if (!Number.isFinite(bytes) || bytes < 0) return '-'
   if (bytes < 1_024) return `${bytes} B`
 
   const units = ['KB', 'MB', 'GB'] as const

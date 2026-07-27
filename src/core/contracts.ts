@@ -6,6 +6,15 @@ export type OutputModeId = OutputProfileId | 'custom'
 export type OutputSelectionId = typeof OUTPUT_SELECTION_IDS[number]
 export type DocumentFormat = 'epub' | 'fb2' | 'pdf'
 export type OcrLanguage = 'eng' | 'deu'
+export type RepairLevel = 'automatic' | 'salvage'
+
+export interface DocumentRepairSummary {
+  readonly level: RepairLevel
+  readonly actions: readonly string[]
+  readonly originalBytes: number
+  readonly repairedBytes: number
+  readonly omittedEntries: number
+}
 
 export interface ConversionOptions {
   readonly profile: OutputModeId
@@ -58,6 +67,7 @@ export interface DocumentInspection {
   readonly passwordProtected?: boolean
   readonly ocrRecommended: boolean
   readonly warnings: readonly string[]
+  readonly repair?: DocumentRepairSummary
 }
 
 export const OUTPUT_PROFILES = [
@@ -142,6 +152,18 @@ const COMMON_REPORTS: readonly OutputFileSpec[] = [
     path: '{Book title}.export-manifest.json',
     format: 'JSON',
     description: 'SHA-256 inventory of every selected file. Always included.',
+  },
+  {
+    path: '{Book title}.repair-report.md',
+    format: 'Markdown',
+    description: 'Exact automatic repair or salvage actions. Included only when the source needed repair.',
+    optional: true,
+  },
+  {
+    path: 'repair/{Book title}.repaired.epub or .fb2.zip',
+    format: 'EPUB or FB2 ZIP',
+    description: 'Structurally repaired source copy. Included only when it can be rebuilt without guessing.',
+    optional: true,
   },
 ]
 

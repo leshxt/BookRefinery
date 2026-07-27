@@ -10,6 +10,9 @@ The goal is to reduce exposure to common archive, XML, active-content and resour
 attacks. This is defense in depth, not a proof that every future browser or parser vulnerability
 is impossible.
 
+The latest full review is documented in
+[docs/SECURITY-AUDIT-2026-07-27.md](docs/SECURITY-AUDIT-2026-07-27.md).
+
 ### Native desktop wrapper
 
 - Windows and Linux packages bundle a dedicated Electron/Chromium runtime around the same production
@@ -41,7 +44,17 @@ is impossible.
 - Preflight and conversion run in disposable Web Workers. Ordinary conversion has a 120-second
   watchdog; automatic OCR has a separate bounded timeout because language initialization is heavier.
 - Input is capped at 80 MB and generated output at 300 MB.
+- A queue may contain up to 100 books, but each item is processed sequentially in its own disposable
+  worker and receives the same independent input, output, and runtime limits.
 - Untrusted HTML/Markdown is never rendered; the UI preview is plain text.
+- Structurally damaged ZIP containers may enter a separate bounded repair parser only after the
+  strict reader reports generic structural damage. Existing path, size, ratio, and policy
+  rejections are never retried through repair.
+- Repair supports only stored and deflated entries with verifiable boundaries and CRC values.
+  Encrypted entries, multi-disk archives, ZIP64 recovery, ambiguous legacy filenames, and ambiguous
+  data-descriptor recovery are refused.
+- The original input is never overwritten. Automatic and salvage actions are recorded in a repair
+  report; incomplete omitted entries and inferred reading order are explicitly labeled as salvage.
 - The production CSP permits connections only to bundled same-origin/blob OCR assets and blocks
   frames, objects, forms, non-local scripts, and every remote origin.
 - External and executable URL schemes are removed from Markdown output.
@@ -59,6 +72,9 @@ is impossible.
   references are removed. Safe references to local signature-checked raster assets are rewritten.
 - The visual companion EPUB is rebuilt from escaped text and generated passive XHTML. Source HTML,
   source stylesheets, scripts, forms, remote links and package metadata structures are not copied.
+- A missing or invalid `mimetype`, missing `container.xml`, absent safe manifest media type, or
+  unusable spine is repaired only when a unique bounded interpretation exists. More than one
+  plausible OPF package is an error.
 - The LLM instruction-pattern scan is advisory and non-destructive. It does not execute or remove
   book text and must not be treated as a complete prompt-injection detector.
 
@@ -72,6 +88,8 @@ is impossible.
 - Each Base64 binary is capped at 25 MB decoded and all decoded binaries at 100 MB total.
 - Duplicate or unsafe binary identifiers are rejected. Unsupported embedded binary types are omitted.
 - PNG, JPEG, GIF and WebP signatures are checked; SVG uses the same passive allowlist sanitizer as EPUB.
+- A damaged `.fb2.zip` may use the same verified ZIP reconstruction. Plain `.fb2` XML is never
+  guessed or rewritten by the archive repair path.
 - Sections, nested sections, note bodies, internal note references, poems, tables, cover images and image
   positions are converted to passive output. External link targets are removed.
 - The NotebookLM companion is rebuilt as generated EPUB XHTML; source FB2 XML is never copied into it.

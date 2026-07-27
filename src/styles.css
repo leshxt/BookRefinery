@@ -253,6 +253,9 @@ main { padding-bottom: 90px; }
 .preflight-grid strong { overflow: hidden; color: #dceae4; font-size: .76rem; text-overflow: ellipsis; white-space: nowrap; }
 .inline-notice { padding: 10px 12px; border-left: 2px solid #e9c56f; border-radius: 0 8px 8px 0; background: rgba(201,158,58,.08); color: #cbbd98; font-size: .72rem; line-height: 1.5; }
 .inline-notice.is-positive { border-left-color: var(--mint); background: rgba(44,220,146,.07); color: #b9ddcc; }
+.repair-notice details { margin-top: 8px; }
+.repair-notice summary { cursor: pointer; font-weight: 700; }
+.repair-notice ul { margin: 8px 0 0; padding-left: 18px; }
 .password-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(190px, .75fr) auto; align-items: end; gap: 13px; padding: 14px; border: 1px solid rgba(88,240,177,.24); border-radius: 12px; background: rgba(33,117,85,.08); }
 .password-form > div strong { color: #e8f6ef; font-size: .78rem; }
 .password-form p { margin: 5px 0 0; color: #91a99e; font-size: .68rem; line-height: 1.45; }

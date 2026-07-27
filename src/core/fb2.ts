@@ -1,7 +1,7 @@
 import { strToU8, zipSync } from 'fflate'
-import { openSecureArchive } from './archive'
+import { openRecoverableArchive } from './archive'
 import type { ConversionProgress, ConversionResult, ConversionSummary } from './convert'
-import type { DocumentInspection } from './contracts'
+import type { DocumentInspection, DocumentRepairSummary } from './contracts'
 import { SecurityError } from './errors'
 import { figureId, outputAssetName, outputAssetPath, rasterDescriptor } from './images'
 import {
@@ -13,6 +13,7 @@ import {
 } from './llm'
 import { safeOutputName } from './path'
 import { SECURITY_POLICY } from './policy'
+import { repairReportMarkdown } from './repair'
 import { sanitizeSvg } from './svg'
 import { isRecord, parseXmlOrderedSecure } from './xml'
 
@@ -42,6 +43,8 @@ interface BinaryRecord {
 interface ConversionAccounting {
   readonly inputBytes: number
   readonly processedBytes: number
+  readonly repair?: DocumentRepairSummary
+  readonly repairedSourceBytes?: Uint8Array
 }
 
 const FIXED_ARCHIVE_DATE = new Date('2026-01-01T00:00:00Z')
@@ -101,7 +104,7 @@ function markdownInline(value: string, maxLength = 20_000): string {
     .replace(/\b(?:https?|ftp):\/\/[^\s<>)\]]+/giu, '[external URL removed]')
     .replace(/\b(?:javascript|vbscript|data|file):[^\s<>)\]]*/giu, '[unsafe URL removed]')
     .replace(/\s+/gu, ' ')
-    .replace(/([\\`*_[\]{}#+|>~-])/gu, '\\$1')
+    .replace(/([\\`*_[\]{}#+|>~])/gu, '\\$1')
     .replace(/</gu, '&lt;')
     .replace(/>/gu, '&gt;')
     .slice(0, maxLength)
@@ -414,8 +417,22 @@ function convertFb2Xml(
   onProgress({ percent: 12, label: 'Validating the FictionBook XML' })
   const root = documentRoot(parseXmlOrderedSecure(bytes, 'FictionBook document', SECURITY_POLICY.maxFb2Bytes))
   const metadata = readMetadata(root)
-  const warnings: string[] = []
+  const warnings: string[] = accounting.repair
+    ? [
+        accounting.repair.level === 'salvage'
+          ? 'The damaged compressed FB2 was processed in clearly marked salvage mode; verify completeness.'
+          : 'The damaged compressed FB2 structure was repaired automatically before strict processing.',
+      ]
+    : []
   const outputFiles: Record<string, Uint8Array> = {}
+  if (accounting.repair) {
+    outputFiles['REPAIR-REPORT.md'] = strToU8(
+      repairReportMarkdown(sourceName, accounting.repair, Boolean(accounting.repairedSourceBytes)),
+    )
+    if (accounting.repairedSourceBytes) {
+      outputFiles['repair/source.repaired.fb2.zip'] = accounting.repairedSourceBytes
+    }
+  }
   const binaryRecords = readBinaries(root)
   const targets = new Map<string, Fb2AssetTarget>()
   const llmAssets = new Map<string, LlmAsset>()
@@ -565,6 +582,7 @@ function convertFb2Xml(
     inputBytes: accounting.inputBytes,
     processedBytes: accounting.processedBytes,
     outputBytes: 0,
+    ...(accounting.repair ? { repair: accounting.repair } : {}),
     warnings: uniqueWarnings,
   }
   outputFiles['SECURITY-REPORT.md'] = strToU8(reportMarkdown(provisionalSummary, sourceName))
@@ -597,7 +615,7 @@ export function convertFb2Zip(
   onProgress: ProgressReporter = () => undefined,
 ): ConversionResult {
   onProgress({ percent: 7, label: 'Checking the compressed FB2 archive' })
-  const archive = openSecureArchive(bytes)
+  const archive = openRecoverableArchive(bytes)
   const candidates = [...archive.entries].filter(([path]) => path.toLocaleLowerCase('en-US').endsWith('.fb2'))
   if (candidates.length !== 1) {
     throw new SecurityError('INVALID_DOCUMENT', 'A compressed FB2 archive must contain exactly one .fb2 document.')
@@ -606,6 +624,7 @@ export function convertFb2Zip(
   return convertFb2Xml(document, sourceName, {
     inputBytes: bytes.byteLength,
     processedBytes: archive.uncompressedBytes,
+    ...(archive.repair ? { repair: archive.repair, repairedSourceBytes: archive.sourceBytes } : {}),
   }, onProgress)
 }
 
@@ -617,15 +636,19 @@ export function inspectFb2(bytes: Uint8Array): DocumentInspection {
 }
 
 export function inspectFb2Zip(bytes: Uint8Array): DocumentInspection {
-  const archive = openSecureArchive(bytes)
+  const archive = openRecoverableArchive(bytes)
   const candidates = [...archive.entries].filter(([path]) =>
     path.toLocaleLowerCase('en-US').endsWith('.fb2'))
   if (candidates.length !== 1) {
     throw new SecurityError('INVALID_DOCUMENT', 'A compressed FB2 archive must contain exactly one .fb2 document.')
   }
   const [, document] = candidates[0]!
-  return inspectFb2Xml(document, {
+  const inspection = inspectFb2Xml(document, {
     inputBytes: bytes.byteLength,
     processedBytes: archive.uncompressedBytes,
   })
+  return {
+    ...inspection,
+    ...(archive.repair ? { repair: archive.repair } : {}),
+  }
 }
