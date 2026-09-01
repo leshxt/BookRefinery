@@ -5,7 +5,10 @@ import {
   isAllowedRendererRequest,
   isValidSaveRequest,
   safeSaveFilename,
+  safeSelectedSourcePath,
+  selectedFilenameFromPath,
 } from './security-policy.mjs'
+import { resolve } from 'node:path'
 
 describe('desktop security policy', () => {
   it('allows only packaged renderer resources', () => {
@@ -32,5 +35,16 @@ describe('desktop security policy', () => {
       mimeType: 'application/zip',
       data: new ArrayBuffer(4),
     }), true)
+  })
+
+  it('returns only a bounded basename for a selected local source', () => {
+    const longName = `${'Financial Intelligence '.repeat(8)}Revised Edition.pdf`
+    const sourcePath = resolve('fixtures', longName)
+
+    assert.equal(safeSelectedSourcePath(sourcePath), sourcePath)
+    assert.equal(selectedFilenameFromPath(sourcePath), longName)
+    assert.equal(selectedFilenameFromPath('../private/book.pdf'), null)
+    assert.equal(selectedFilenameFromPath(resolve('fixtures', 'bad\u0000name.pdf')), null)
+    assert.equal(selectedFilenameFromPath(resolve('fixtures', `${'x'.repeat(256)}.pdf`)), null)
   })
 })

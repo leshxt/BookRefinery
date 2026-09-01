@@ -7,7 +7,7 @@ import {
   session,
   shell,
 } from 'electron'
-import { readFile, writeFile } from 'node:fs/promises'
+import { readFile, realpath, stat, writeFile } from 'node:fs/promises'
 import { dirname, extname, isAbsolute, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
@@ -16,6 +16,8 @@ import {
   isAllowedRendererRequest,
   isValidSaveRequest,
   safeSaveFilename,
+  safeSelectedSourcePath,
+  selectedFilenameFromPath,
 } from './security-policy.mjs'
 
 const moduleDirectory = dirname(fileURLToPath(import.meta.url))
@@ -172,6 +174,30 @@ async function savePreparedFile(event, request) {
   return { canceled: false }
 }
 
+async function resolveSelectedFileName(event, rawPath) {
+  if (
+    !mainWindow ||
+    event.sender !== mainWindow.webContents ||
+    !isAllowedRendererRequest(event.senderFrame?.url ?? '')
+  ) {
+    throw new Error('Rejected invalid native source-name request.')
+  }
+  const sourcePath = safeSelectedSourcePath(rawPath)
+  if (!sourcePath) throw new Error('Rejected unsafe native source path.')
+
+  let canonicalPath
+  let sourceStat
+  try {
+    canonicalPath = await realpath(sourcePath)
+    sourceStat = await stat(canonicalPath)
+  } catch {
+    throw new Error('The selected source name could not be resolved safely.')
+  }
+  const filename = sourceStat.isFile() ? selectedFilenameFromPath(canonicalPath) : null
+  if (!filename) throw new Error('The selected source name could not be resolved safely.')
+  return filename
+}
+
 function createMainWindow(isolatedSession) {
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -287,6 +313,7 @@ app.whenReady().then(async () => {
   isolatedSession.setDevicePermissionHandler(() => false)
   await isolatedSession.protocol.handle('bookrefinery', packagedResponse)
   ipcMain.handle('bookrefinery:save-file', savePreparedFile)
+  ipcMain.handle('bookrefinery:resolve-selected-file-name', resolveSelectedFileName)
   createMainWindow(isolatedSession)
 
   app.on('activate', () => {

@@ -5,6 +5,7 @@ export interface DesktopSaveRequest {
 }
 
 export interface BookRefineryDesktopBridge {
+  resolveSelectedFileName(file: File): Promise<unknown>
   saveFile(request: DesktopSaveRequest): Promise<{ readonly canceled: boolean }>
 }
 
@@ -37,6 +38,28 @@ function exactArrayBuffer(data: Uint8Array): ArrayBuffer {
   const buffer = new ArrayBuffer(data.byteLength)
   new Uint8Array(buffer).set(data)
   return buffer
+}
+
+function isSafeSelectedFilename(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length > 0 &&
+    value.length <= 255 &&
+    value !== '.' &&
+    value !== '..' &&
+    !/[\\/\u0000-\u001f\u007f]/u.test(value)
+  )
+}
+
+export async function selectedFileName(file: File): Promise<string> {
+  const desktopBridge = window.bookRefineryDesktop
+  if (!desktopBridge) return file.name
+  try {
+    const resolvedName = await desktopBridge.resolveSelectedFileName(file)
+    return isSafeSelectedFilename(resolvedName) ? resolvedName : file.name
+  } catch {
+    return file.name
+  }
 }
 
 function isCancellation(error: unknown): boolean {

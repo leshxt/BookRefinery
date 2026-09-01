@@ -1,8 +1,18 @@
-const { contextBridge, ipcRenderer } = require('electron')
+const { contextBridge, ipcRenderer, webUtils } = require('electron')
 
 const MAX_SAVE_BYTES = 300 * 1024 * 1024
 
 contextBridge.exposeInMainWorld('bookRefineryDesktop', {
+  resolveSelectedFileName: (file) => {
+    let sourcePath
+    try {
+      sourcePath = webUtils.getPathForFile(file)
+    } catch {
+      return Promise.resolve(null)
+    }
+    if (typeof sourcePath !== 'string' || sourcePath.length === 0) return Promise.resolve(null)
+    return ipcRenderer.invoke('bookrefinery:resolve-selected-file-name', sourcePath)
+  },
   saveFile: (request) => {
     if (
       typeof request !== 'object' ||

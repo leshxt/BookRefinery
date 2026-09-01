@@ -15,7 +15,7 @@ import type { SecurityErrorCode } from './core/errors'
 import { formatBytes, SECURITY_POLICY } from './core/policy'
 import { safeOutputName } from './core/path'
 import { isNativeDesktopRuntime } from './platform'
-import { savePreparedFile } from './save-file'
+import { savePreparedFile, selectedFileName } from './save-file'
 import {
   runConversion,
   runInspection,
@@ -25,6 +25,7 @@ import {
 interface JobBase {
   readonly id: string
   readonly file: File
+  readonly sourceName: string
 }
 
 type Job =
@@ -92,17 +93,17 @@ function jobsReducer(jobs: readonly Job[], action: JobAction): readonly Job[] {
     case 'inspected':
       return jobs.map((job) =>
         job.id === action.id && job.status === 'inspecting'
-          ? { id: job.id, file: job.file, status: 'ready', inspection: action.inspection }
+          ? { id: job.id, file: job.file, sourceName: job.sourceName, status: 'ready', inspection: action.inspection }
           : job)
     case 'password-needed':
       return jobs.map((job) =>
         job.id === action.id
-          ? { id: job.id, file: job.file, status: 'password', incorrect: action.incorrect }
+          ? { id: job.id, file: job.file, sourceName: job.sourceName, status: 'password', incorrect: action.incorrect }
           : job)
     case 'unlock':
       return jobs.map((job) =>
         job.id === action.id && job.status === 'password'
-          ? { id: job.id, file: job.file, status: 'inspecting' }
+          ? { id: job.id, file: job.file, sourceName: job.sourceName, status: 'inspecting' }
           : job)
     case 'failed':
       return jobs.map((job) =>
@@ -110,6 +111,7 @@ function jobsReducer(jobs: readonly Job[], action: JobAction): readonly Job[] {
           ? {
               id: job.id,
               file: job.file,
+              sourceName: job.sourceName,
               status: 'error',
               inspection: action.inspection,
               code: action.code,
@@ -141,6 +143,7 @@ function jobsReducer(jobs: readonly Job[], action: JobAction): readonly Job[] {
           ? {
               id: job.id,
               file: job.file,
+              sourceName: job.sourceName,
               status: 'success',
               inspection: job.inspection,
               result: action.result,
@@ -153,11 +156,11 @@ function jobsReducer(jobs: readonly Job[], action: JobAction): readonly Job[] {
       return jobs.map((job) => {
         if (job.id !== action.id || job.status !== 'error') return job
         if (job.inspection?.passwordProtected) {
-          return { id: job.id, file: job.file, status: 'password', incorrect: false }
+          return { id: job.id, file: job.file, sourceName: job.sourceName, status: 'password', incorrect: false }
         }
         return job.inspection
-          ? { id: job.id, file: job.file, status: 'ready', inspection: job.inspection }
-          : { id: job.id, file: job.file, status: 'inspecting' }
+          ? { id: job.id, file: job.file, sourceName: job.sourceName, status: 'ready', inspection: job.inspection }
+          : { id: job.id, file: job.file, sourceName: job.sourceName, status: 'inspecting' }
       })
     case 'remove':
       return jobs.filter((job) => job.id !== action.id)
@@ -217,16 +220,16 @@ function selectError(file: File): { readonly code: SecurityErrorCode; readonly m
   return null
 }
 
-function fileBadge(file: File): string {
-  const name = file.name.toLocaleLowerCase('en-US')
+function fileBadge(sourceName: string): string {
+  const name = sourceName.toLocaleLowerCase('en-US')
   if (name.endsWith('.pdf')) return 'PDF'
   if (name.endsWith('.fb2') || name.endsWith('.fb2.zip')) return 'FB2'
   return 'EPUB'
 }
 
-function guessedFormat(file: File | undefined): DocumentFormat {
-  if (!file) return 'epub'
-  const badge = fileBadge(file)
+function guessedFormat(sourceName: string | undefined): DocumentFormat {
+  if (!sourceName) return 'epub'
+  const badge = fileBadge(sourceName)
   return badge === 'PDF' ? 'pdf' : badge === 'FB2' ? 'fb2' : 'epub'
 }
 
@@ -357,7 +360,7 @@ export function App() {
   const successfulJobs = jobs.filter((job): job is Extract<Job, { status: 'success' }> => job.status === 'success')
   const focusJob = jobs.find((job) => inspectionFor(job)) ?? jobs[0]
   const focusInspection = focusJob ? inspectionFor(focusJob) : null
-  const focusFormat = focusInspection?.format ?? guessedFormat(focusJob?.file)
+  const focusFormat = focusInspection?.format ?? guessedFormat(focusJob?.sourceName)
   const focusTitleStem = safeOutputName(focusInspection?.title ?? 'Book title', 'Book title')
   const selectedProfile = OUTPUT_PROFILES.find((candidate) =>
     sameOutputs(candidate.outputs, selectedOutputs))
@@ -368,6 +371,7 @@ export function App() {
     try {
       const inspection = await runInspection(
         job.file,
+        job.sourceName,
         controller.signal,
         pdfPasswords.current.get(job.id),
       )
@@ -397,26 +401,31 @@ export function App() {
   const unlockPdf = (job: Extract<Job, { status: 'password' }>, password: string): void => {
     pdfPasswords.current.set(job.id, password)
     dispatch({ type: 'unlock', id: job.id })
-    void inspectJob({ id: job.id, file: job.file, status: 'inspecting' })
+    void inspectJob({ id: job.id, file: job.file, sourceName: job.sourceName, status: 'inspecting' })
   }
 
   const addFiles = async (fileList: FileList | readonly File[]): Promise<void> => {
     const remaining = Math.max(0, SECURITY_POLICY.maxBatchFiles - jobs.length)
     const files = Array.from(fileList).slice(0, remaining)
     if (files.length === 0) return
-    const additions: Job[] = files.map((file) => {
+    const namedFiles = await Promise.all(files.map(async (file) => ({
+      file,
+      sourceName: await selectedFileName(file),
+    })))
+    const additions: Job[] = namedFiles.map(({ file, sourceName }) => {
       const id = globalThis.crypto.randomUUID()
       const error = selectError(file)
       return error
         ? {
             id,
             file,
+            sourceName,
             status: 'error',
             inspection: null,
             code: error.code,
             message: error.message,
           }
-        : { id, file, status: 'inspecting' }
+        : { id, file, sourceName, status: 'inspecting' }
     })
     dispatch({ type: 'add', jobs: additions })
     for (const job of additions) {
@@ -446,6 +455,7 @@ export function App() {
       try {
         const result = await runConversion(
           job.file,
+          job.sourceName,
           options,
           (progress) => dispatch({ type: 'progress', id: job.id, progress }),
           controller.signal,
@@ -507,7 +517,7 @@ export function App() {
   const retryJob = (job: Extract<Job, { status: 'error' }>): void => {
     dispatch({ type: 'retry', id: job.id })
     if (!job.inspection) {
-      void inspectJob({ id: job.id, file: job.file, status: 'inspecting' })
+      void inspectJob({ id: job.id, file: job.file, sourceName: job.sourceName, status: 'inspecting' })
     }
   }
 
@@ -836,13 +846,13 @@ export function App() {
                 return (
                   <article className={`job-card job-${job.status}`} key={job.id}>
                     <div className="job-main">
-                      <div className="file-icon">{fileBadge(job.file)}</div>
+                      <div className="file-icon">{fileBadge(job.sourceName)}</div>
                       <div className="file-details">
-                        <strong>{job.file.name}</strong>
+                        <strong>{job.sourceName}</strong>
                         <span>{formatBytes(job.file.size)} · {jobStatusLabel(job)}</span>
                       </div>
                       {job.status !== 'running' && job.status !== 'queued' && (
-                        <button className="icon-button" type="button" aria-label={`Remove ${job.file.name}`} onClick={() => removeJob(job)}>×</button>
+                        <button className="icon-button" type="button" aria-label={`Remove ${job.sourceName}`} onClick={() => removeJob(job)}>×</button>
                       )}
                     </div>
 
@@ -887,7 +897,7 @@ export function App() {
 
                     {job.status === 'password' && (
                       <PdfPasswordForm
-                        filename={job.file.name}
+                        filename={job.sourceName}
                         incorrect={job.incorrect}
                         onUnlock={(password) => unlockPdf(job, password)}
                       />

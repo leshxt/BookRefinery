@@ -18,6 +18,7 @@ import {
   type DocumentInspection,
 } from './contracts'
 import type { ConversionProgress, ConversionResult, ConversionSummary } from './convert'
+import { preferredPdfTitle } from './title'
 import { SecurityError } from './errors'
 import { LocalOcrSession, type OcrRecognition } from './ocr'
 import { safeOutputName } from './path'
@@ -559,7 +560,7 @@ export async function convertPdf(
       info = undefined
     }
 
-    const title = metadataText(info, 'Title') ?? sourceStem(sourceName)
+    const title = preferredPdfTitle(metadataText(info, 'Title'), sourceName)
     const author = metadataText(info, 'Author')
     const pageSections: PdfPageSection[] = []
     const searchablePageRuns: SearchableTextRun[][] = []
@@ -903,7 +904,7 @@ export async function inspectPdf(
     const author = metadataText(info, 'Author')
     return {
       format: 'pdf',
-      title: metadataText(info, 'Title') ?? sourceStem(sourceName),
+      title: preferredPdfTitle(metadataText(info, 'Title'), sourceName),
       ...(author ? { author } : {}),
       units: document.numPages,
       unitLabel: 'pages',

@@ -1,7 +1,9 @@
-import { basename, extname } from 'node:path'
+import { basename, extname, isAbsolute } from 'node:path'
 
 export const APP_ORIGIN = 'bookrefinery://app'
 export const MAX_NATIVE_SAVE_BYTES = 300 * 1024 * 1024
+export const MAX_NATIVE_SOURCE_PATH_CHARS = 32_767
+export const MAX_NATIVE_SOURCE_NAME_CHARS = 255
 
 const EXTERNAL_LINKS = new Set([
   'https://github.com/leshxt',
@@ -52,4 +54,33 @@ export function isValidSaveRequest(value) {
     value.data.byteLength > 0 &&
     value.data.byteLength <= MAX_NATIVE_SAVE_BYTES
   )
+}
+
+export function safeSelectedSourcePath(value) {
+  if (
+    typeof value !== 'string' ||
+    value.length < 1 ||
+    value.length > MAX_NATIVE_SOURCE_PATH_CHARS ||
+    value.includes('\0') ||
+    !isAbsolute(value)
+  ) {
+    return null
+  }
+  return value
+}
+
+export function selectedFilenameFromPath(value) {
+  const sourcePath = safeSelectedSourcePath(value)
+  if (!sourcePath) return null
+  const filename = basename(sourcePath).normalize('NFKC')
+  if (
+    filename.length < 1 ||
+    filename.length > MAX_NATIVE_SOURCE_NAME_CHARS ||
+    filename === '.' ||
+    filename === '..' ||
+    /[\\/\u0000-\u001f\u007f]/u.test(filename)
+  ) {
+    return null
+  }
+  return filename
 }
