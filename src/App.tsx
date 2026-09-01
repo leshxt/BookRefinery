@@ -15,7 +15,12 @@ import type { SecurityErrorCode } from './core/errors'
 import { formatBytes, SECURITY_POLICY } from './core/policy'
 import { safeOutputName } from './core/path'
 import { isNativeDesktopRuntime } from './platform'
-import { savePreparedFile, selectedFileName } from './save-file'
+import {
+  MAX_PREPARED_SAVE_BYTES,
+  PreparedSaveTooLargeError,
+  savePreparedFile,
+  selectedFileName,
+} from './save-file'
 import { APP_VERSION } from './version'
 import {
   runConversion,
@@ -359,6 +364,10 @@ export function App() {
   const batchRunning = jobs.some((job) => job.status === 'queued' || job.status === 'running')
   const readyJobs = jobs.filter((job): job is Extract<Job, { status: 'ready' }> => job.status === 'ready')
   const successfulJobs = jobs.filter((job): job is Extract<Job, { status: 'success' }> => job.status === 'success')
+  const successfulBytes = successfulJobs.reduce(
+    (total, job) => total + job.result.archive.byteLength,
+    0,
+  )
   const focusJob = jobs.find((job) => inspectionFor(job)) ?? jobs[0]
   const focusInspection = focusJob ? inspectionFor(focusJob) : null
   const focusFormat = focusInspection?.format ?? guessedFormat(focusJob?.sourceName)
@@ -539,16 +548,34 @@ export function App() {
             message: 'Your browser does not support Save As here, so it saved the file to its download folder.',
           }
         : { kind: 'success', message: `Saved ${filename}.` })
-    } catch {
+    } catch (error) {
       setSaveNotice({
         kind: 'error',
-        message: 'The prepared file could not be saved. It remains available in this queue.',
+        message: error instanceof PreparedSaveTooLargeError
+          ? `The ${formatBytes(error.sizeBytes)} package exceeds the ${formatBytes(error.limitBytes)} safe save limit. Save the prepared books individually; they remain available in this queue.`
+          : 'The prepared file could not be saved. It remains available in this queue.',
       })
     }
   }
 
   const saveAll = async (): Promise<void> => {
     if (successfulJobs.length === 0) return
+    const estimatedZipOverhead = successfulJobs.reduce(
+      (total, job, index) => {
+        const prefix = String(index + 1).padStart(2, '0')
+        const filenameBytes = new TextEncoder().encode(`${prefix}-${job.result.filename}`).byteLength
+        return total + 76 + (filenameBytes * 2)
+      },
+      22,
+    )
+    const estimatedArchiveBytes = successfulBytes + estimatedZipOverhead
+    if (estimatedArchiveBytes > MAX_PREPARED_SAVE_BYTES) {
+      setSaveNotice({
+        kind: 'error',
+        message: `The combined package would be about ${formatBytes(estimatedArchiveBytes)}, above the ${formatBytes(MAX_PREPARED_SAVE_BYTES)} safe save limit. Save the prepared books individually; they remain available in this queue.`,
+      })
+      return
+    }
     const files: Record<string, Uint8Array> = {}
     for (const [index, job] of successfulJobs.entries()) {
       const prefix = String(index + 1).padStart(2, '0')
@@ -957,7 +984,7 @@ export function App() {
                 )}
                 {successfulJobs.length > 1 && (
                   <button className="secondary-button" type="button" onClick={() => void saveAll()}>
-                    <SaveIcon /> Save all as…
+                    <SaveIcon /> Save all as… ({formatBytes(successfulBytes)})
                   </button>
                 )}
               </div>

@@ -11,6 +11,20 @@ export interface BookRefineryDesktopBridge {
 
 export type SaveFileResult = 'saved' | 'cancelled' | 'browser-download'
 
+export const MAX_PREPARED_SAVE_BYTES = 2 * 1024 * 1024 * 1024
+
+export class PreparedSaveTooLargeError extends Error {
+  readonly sizeBytes: number
+  readonly limitBytes: number
+
+  constructor(sizeBytes: number, limitBytes = MAX_PREPARED_SAVE_BYTES) {
+    super('The prepared file exceeds the safe save limit.')
+    this.name = 'PreparedSaveTooLargeError'
+    this.sizeBytes = sizeBytes
+    this.limitBytes = limitBytes
+  }
+}
+
 interface SaveFilePickerHandle {
   createWritable(): Promise<{
     write(data: Blob): Promise<void>
@@ -35,6 +49,13 @@ declare global {
 }
 
 function exactArrayBuffer(data: Uint8Array): ArrayBuffer {
+  if (
+    data.buffer instanceof ArrayBuffer &&
+    data.byteOffset === 0 &&
+    data.byteLength === data.buffer.byteLength
+  ) {
+    return data.buffer
+  }
   const buffer = new ArrayBuffer(data.byteLength)
   new Uint8Array(buffer).set(data)
   return buffer
@@ -76,6 +97,9 @@ export async function savePreparedFile(
   filename: string,
   mimeType = 'application/zip',
 ): Promise<SaveFileResult> {
+  if (data.byteLength > MAX_PREPARED_SAVE_BYTES) {
+    throw new PreparedSaveTooLargeError(data.byteLength)
+  }
   const buffer = exactArrayBuffer(data)
   const desktopBridge = window.bookRefineryDesktop
   if (desktopBridge) {
