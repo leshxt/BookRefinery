@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.9.1 - 2026-09-01
+
+- Restored long Windows filenames inside the desktop sandbox instead of displaying DOS aliases such
+  as `FINANZ~1.PDF`, while returning only the filename and never exposing the private source path.
+- Passed the recovered source name consistently through preflight, conversion, password prompts,
+  reports, and output naming without changing the selected source file.
+- Improved PDF title fallback behavior for missing, generic, or DOS-alias metadata and cleaned
+  catalog-style filenames into readable book titles.
+- Updated PDF.js to a patched release for CVE-2026-16633; BookRefinery continues to use only its
+  parser API without loading PDF.js viewer or scripting components.
+- Refreshed audited transitive build dependencies after newly published advisories.
+- Added desktop policy, title-selection, and PDF conversion regression tests for the affected cases.
+
 ## 0.9.0 - 2026-07-27
 
 - Added bounded automatic repair for damaged EPUB and compressed FB2 ZIP containers with CRC

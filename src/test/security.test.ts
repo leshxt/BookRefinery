@@ -271,6 +271,22 @@ describe('secure PDF conversion', () => {
     expect(document).not.toContain('attacker.invalid')
   })
 
+  it('uses a recovered long source name when PDF title metadata is missing', async () => {
+    const sourceName = 'Finanzierung von Start-up-Unternehmen _ Praxisbuch für junge Unternehmen -- Christopher Hahn -- 9783658123456 -- Anna Archive.pdf'
+    const result = await convertDocument(
+      makePdf([['Finanzierung für junge Unternehmen']], { metadataTitle: null }),
+      sourceName,
+    )
+    const output = unzipSync(result.archive)
+
+    expect(result.summary.title).toBe(
+      'Finanzierung von Start-up-Unternehmen: Praxisbuch für junge Unternehmen',
+    )
+    expect(Object.keys(output)).toContain(
+      'Finanzierung von Start-up-Unternehmen- Praxisbuch für junge Unternehmen.md',
+    )
+  })
+
   it('rejects unknown input formats before parsing', async () => {
     await expect(convertDocument(strToU8('not an ebook'), 'fake.bin')).rejects.toThrow(/not a supported EPUB, FB2, or PDF/u)
   })

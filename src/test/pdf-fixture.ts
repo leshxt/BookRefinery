@@ -9,6 +9,7 @@ function contentStream(lines: readonly string[]): string {
 
 export interface PdfFixtureOptions {
   readonly outline?: readonly { readonly title: string; readonly page: number }[]
+  readonly metadataTitle?: string | null
 }
 
 const PASSWORD_PDF_BASE64 =
@@ -60,7 +61,8 @@ export function makePdf(
       )
     }
   }
-  objects.push('<< /Title (Test PDF) /Author (Ada Beispiel) >>')
+  const metadataTitle = options.metadataTitle === undefined ? 'Test PDF' : options.metadataTitle
+  objects.push(`<<${metadataTitle === null ? '' : ` /Title (${pdfString(metadataTitle)})`} /Author (Ada Beispiel) >>`)
 
   const header = '%PDF-1.4\n%BookRefinery\n'
   let body = header

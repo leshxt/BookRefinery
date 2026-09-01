@@ -92,6 +92,7 @@ function isPdfJsTransportMessage(value: unknown): boolean {
 
 export async function runConversion(
   file: File,
+  sourceName: string,
   options: ConversionOptions,
   onProgress: (progress: ConversionProgress) => void,
   signal: AbortSignal,
@@ -119,7 +120,7 @@ export async function runConversion(
       reject(new DOMException('Conversion cancelled.', 'AbortError'))
     }
 
-    const timeoutMs = options.ocr.enabled && file.name.toLocaleLowerCase('en-US').endsWith('.pdf')
+    const timeoutMs = options.ocr.enabled && sourceName.toLocaleLowerCase('en-US').endsWith('.pdf')
       ? SECURITY_POLICY.ocrWorkerTimeoutMs
       : SECURITY_POLICY.workerTimeoutMs
     const timeout = globalThis.setTimeout(() => {
@@ -175,7 +176,7 @@ export async function runConversion(
 
     const request: WorkerRequest = {
       type: 'convert',
-      filename: file.name,
+      filename: sourceName,
       buffer: inputBuffer,
       options,
       ...(password === undefined ? {} : { password }),
@@ -186,6 +187,7 @@ export async function runConversion(
 
 export async function runInspection(
   file: File,
+  sourceName: string,
   signal: AbortSignal,
   password?: string,
 ): Promise<DocumentInspection> {
@@ -247,7 +249,7 @@ export async function runInspection(
 
     const request: WorkerRequest = {
       type: 'inspect',
-      filename: file.name,
+      filename: sourceName,
       buffer: inputBuffer,
       ...(password === undefined ? {} : { password }),
     }
