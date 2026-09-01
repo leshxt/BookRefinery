@@ -3,6 +3,22 @@ import { defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import { readFileSync } from 'node:fs'
 
+function readPackageVersion(): string {
+  const metadata: unknown = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'))
+  if (
+    typeof metadata !== 'object' ||
+    metadata === null ||
+    !('version' in metadata) ||
+    typeof metadata.version !== 'string' ||
+    !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u.test(metadata.version)
+  ) {
+    throw new TypeError('package.json contains an invalid application version.')
+  }
+  return metadata.version
+}
+
+const BOOKREFINERY_VERSION = readPackageVersion()
+
 const CONTENT_SECURITY_POLICY = [
   "default-src 'self'",
   "script-src 'self'",
@@ -81,6 +97,7 @@ export default defineConfig({
   // its browser path. Replace the exact flag instead of exposing a process
   // polyfill inside the converter worker.
   define: {
+    __BOOKREFINERY_VERSION__: JSON.stringify(BOOKREFINERY_VERSION),
     'process.env.LOG_PERF': 'false',
   },
   build: {

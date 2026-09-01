@@ -16,6 +16,7 @@ import { formatBytes, SECURITY_POLICY } from './core/policy'
 import { safeOutputName } from './core/path'
 import { isNativeDesktopRuntime } from './platform'
 import { savePreparedFile, selectedFileName } from './save-file'
+import { APP_VERSION } from './version'
 import {
   runConversion,
   runInspection,
@@ -569,6 +570,7 @@ export function App() {
               <img src={`${import.meta.env.BASE_URL}bookrefinery-icon.png`} alt="" />
             </span>
             <span className="brand-name" translate="no">Book<strong>Refinery</strong></span>
+            <span className="brand-version" aria-label={`Version ${APP_VERSION}`}>v{APP_VERSION}</span>
           </a>
           <a
             className="creator-link"

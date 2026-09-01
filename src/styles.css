@@ -45,6 +45,7 @@ body::before {
 .brand-lockup { display: grid; gap: 5px; }
 .brand { display: flex; gap: 11px; align-items: center; color: #dceae4; text-decoration: none; letter-spacing: -.02em; }
 .brand strong { color: white; }
+.brand-version { align-self: center; padding: 2px 5px; border: 1px solid rgba(168, 222, 199, .14); border-radius: 5px; color: #789087; font: 600 .56rem ui-monospace, monospace; letter-spacing: .025em; }
 .brand-mark { width: 37px; height: 37px; display: grid; place-items: center; }
 .brand-mark img { width: 37px; height: 37px; object-fit: contain; }
 .creator-link { width: fit-content; display: inline-flex; align-items: center; gap: 5px; margin-left: 46px; color: #789087; font-size: .67rem; letter-spacing: .035em; text-decoration: none; transition: color .16s; }

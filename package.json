@@ -1,7 +1,7 @@
 {
   "name": "bookrefinery",
   "private": true,
-  "version": "0.9.1",
+  "version": "0.9.2",
   "description": "Local-first EPUB, FB2, and PDF repair, sanitization, OCR, and multimodal LLM preparation.",
   "author": {
     "name": "leshxt",
