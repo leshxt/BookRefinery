@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.2 - 2026-09-01
+
+- Added a subtle application version label beside the BookRefinery name in the main header.
+- Sourced the displayed version from validated package metadata at build time so web and desktop
+  editions cannot drift from the published package version.
+
 ## 0.9.1 - 2026-09-01
 
 - Restored long Windows filenames inside the desktop sandbox instead of displaying DOS aliases such
