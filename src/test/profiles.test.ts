@@ -21,6 +21,7 @@ function options(profile: OutputProfileId): ConversionOptions {
   return {
     profile,
     outputs: outputsForProfile(profile),
+    resourceMode: 'standard',
     ocr: {
       enabled: false,
       languages: ['eng', 'deu'],
@@ -104,6 +105,7 @@ describe('profile-aware exports', () => {
       {
         profile: 'custom',
         outputs: ['markdown'],
+        resourceMode: 'standard',
         ocr: { enabled: false, languages: ['eng', 'deu'] },
       },
       'open-sesame',
@@ -197,6 +199,7 @@ describe('profile-aware exports', () => {
     const result = await packageConversionResult(raw, {
       profile,
       outputs: ['visual-source', 'markdown'],
+      resourceMode: 'standard',
     })
     const output = unzipSync(result.archive)
 
@@ -227,6 +230,7 @@ describe('profile-aware exports', () => {
     }, {
       profile: 'custom',
       outputs: ['assets'],
+      resourceMode: 'standard',
     })
     const paths = Object.keys(unzipSync(result.archive))
 
@@ -305,5 +309,9 @@ describe('structured and adaptive PDF preparation', () => {
     expect(pdfRenderPlan([{ width: 612, height: 792 }])?.jpegQuality).toBe(0.96)
     expect(pdfRenderPlan(Array.from({ length: 200 }, () => ({ width: 612, height: 792 })))?.jpegQuality).toBe(0.91)
     expect(pdfRenderPlan(Array.from({ length: 2_000 }, () => ({ width: 2_000, height: 2_000 })))).toBeNull()
+    expect(pdfRenderPlan(
+      Array.from({ length: 600 }, () => ({ width: 612, height: 792 })),
+      1_500_000_000,
+    )).not.toBeNull()
   })
 })

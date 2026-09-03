@@ -12,15 +12,18 @@ import {
 } from './core/contracts'
 import type { ConversionProgress, ConversionResult } from './core/convert'
 import type { SecurityErrorCode } from './core/errors'
-import { formatBytes, SECURITY_POLICY } from './core/policy'
+import {
+  formatBytes,
+  SECURITY_POLICY,
+} from './core/policy'
 import { safeOutputName } from './core/path'
 import { isNativeDesktopRuntime } from './platform'
 import {
-  MAX_PREPARED_SAVE_BYTES,
-  PreparedSaveTooLargeError,
-  savePreparedFile,
-  selectedFileName,
-} from './save-file'
+  conversionResourceWarnings,
+  isCombinedZipSizeSupported,
+  requiresLargeSaveConfirmation,
+} from './resource-consent'
+import { savePreparedFile, selectedFileName } from './save-file'
 import { APP_VERSION } from './version'
 import {
   runConversion,
@@ -91,6 +94,15 @@ type DesktopInstallState =
   | { readonly kind: 'installed' }
   | { readonly kind: 'native' }
   | { readonly kind: 'browser-menu' }
+
+type ResourceConsent =
+  | { readonly kind: 'conversion'; readonly warnings: readonly string[] }
+  | { readonly kind: 'save-all'; readonly bytes: number }
+  | {
+      readonly kind: 'save-one'
+      readonly jobId: string
+      readonly bytes: number
+    }
 
 function jobsReducer(jobs: readonly Job[], action: JobAction): readonly Job[] {
   switch (action.type) {
@@ -333,6 +345,7 @@ export function App() {
     readonly kind: 'success' | 'fallback' | 'error'
     readonly message: string
   } | null>(null)
+  const [resourceConsent, setResourceConsent] = useState<ResourceConsent | null>(null)
   const [desktopInstall, setDesktopInstall] = useState<DesktopInstallState>(
     initialDesktopInstallState,
   )
@@ -443,14 +456,20 @@ export function App() {
     }
   }
 
-  const startBatch = async (): Promise<void> => {
+  const startBatch = async (extendedResources = false): Promise<void> => {
     if (batchRunning || readyJobs.length === 0) return
     const snapshot = [...readyJobs]
+    const resourceWarnings = conversionResourceWarnings(snapshot, selectedOutputs, ocrEnabled)
+    if (!extendedResources && resourceWarnings.length > 0) {
+      setResourceConsent({ kind: 'conversion', warnings: resourceWarnings })
+      return
+    }
     dispatch({ type: 'queue', ids: new Set(snapshot.map((job) => job.id)) })
     stopBatch.current = false
     const options: ConversionOptions = {
       profile: selectedProfile?.id ?? 'custom',
       outputs: selectedOutputs,
+      resourceMode: extendedResources ? 'extended' : 'standard',
       ocr: {
         enabled: ocrEnabled,
         languages: ['eng', 'deu'],
@@ -548,17 +567,30 @@ export function App() {
             message: 'Your browser does not support Save As here, so it saved the file to its download folder.',
           }
         : { kind: 'success', message: `Saved ${filename}.` })
-    } catch (error) {
+    } catch {
       setSaveNotice({
         kind: 'error',
-        message: error instanceof PreparedSaveTooLargeError
-          ? `The ${formatBytes(error.sizeBytes)} package exceeds the ${formatBytes(error.limitBytes)} safe save limit. Save the prepared books individually; they remain available in this queue.`
-          : 'The prepared file could not be saved. It remains available in this queue.',
+        message: 'The prepared file could not be saved. It remains available in this queue.',
       })
     }
   }
 
-  const saveAll = async (): Promise<void> => {
+  const requestJobSave = async (
+    job: Extract<Job, { status: 'success' }>,
+    confirmed = false,
+  ): Promise<void> => {
+    if (!confirmed && requiresLargeSaveConfirmation(job.result.archive.byteLength)) {
+      setResourceConsent({
+        kind: 'save-one',
+        jobId: job.id,
+        bytes: job.result.archive.byteLength,
+      })
+      return
+    }
+    await saveArchive(job.result.archive, job.result.filename)
+  }
+
+  const saveAll = async (confirmed = false): Promise<void> => {
     if (successfulJobs.length === 0) return
     const estimatedZipOverhead = successfulJobs.reduce(
       (total, job, index) => {
@@ -569,11 +601,15 @@ export function App() {
       22,
     )
     const estimatedArchiveBytes = successfulBytes + estimatedZipOverhead
-    if (estimatedArchiveBytes > MAX_PREPARED_SAVE_BYTES) {
+    if (!isCombinedZipSizeSupported(estimatedArchiveBytes)) {
       setSaveNotice({
         kind: 'error',
-        message: `The combined package would be about ${formatBytes(estimatedArchiveBytes)}, above the ${formatBytes(MAX_PREPARED_SAVE_BYTES)} safe save limit. Save the prepared books individually; they remain available in this queue.`,
+        message: `The combined package would be about ${formatBytes(estimatedArchiveBytes)}, above the technical ZIP limit. Save the prepared books individually; they remain available in this queue.`,
       })
+      return
+    }
+    if (!confirmed && requiresLargeSaveConfirmation(estimatedArchiveBytes)) {
+      setResourceConsent({ kind: 'save-all', bytes: estimatedArchiveBytes })
       return
     }
     const files: Record<string, Uint8Array> = {}
@@ -587,8 +623,69 @@ export function App() {
     )
   }
 
+  const confirmResourceUse = (): void => {
+    const consent = resourceConsent
+    setResourceConsent(null)
+    if (!consent) return
+    if (consent.kind === 'conversion') {
+      void startBatch(true)
+      return
+    }
+    if (consent.kind === 'save-all') {
+      void saveAll(true)
+      return
+    }
+    const job = successfulJobs.find((candidate) => candidate.id === consent.jobId)
+    if (job) void requestJobSave(job, true)
+  }
+
   return (
     <div className="app-shell">
+      {resourceConsent && (
+        <div className="resource-dialog-backdrop">
+          <section
+            className="resource-dialog"
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="resource-dialog-title"
+            aria-describedby="resource-dialog-description"
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') setResourceConsent(null)
+            }}
+          >
+            <span className="resource-dialog-kicker">Resource warning</span>
+            <h2 id="resource-dialog-title">
+              {resourceConsent.kind === 'conversion'
+                ? 'This job is larger than the normal processing budget'
+                : 'This file is larger than the normal save budget'}
+            </h2>
+            <p id="resource-dialog-description">
+              {resourceConsent.kind === 'conversion'
+                ? 'Continuing keeps the requested visual and OCR outputs enabled, but may take much longer and use substantially more memory, CPU, and disk space.'
+                : `${formatBytes(resourceConsent.bytes)} will be assembled in memory and written locally. The operation can fail if the system runs out of memory or free disk space.`}
+            </p>
+            {resourceConsent.kind === 'conversion' && (
+              <ul>{resourceConsent.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>
+            )}
+            <p className="resource-dialog-note">
+              Structural protections against malformed files, unsafe paths, ZIP bombs, and unsupported canvas sizes remain active.
+            </p>
+            <div className="resource-dialog-actions">
+              <button
+                className="secondary-button"
+                type="button"
+                autoFocus
+                onClick={() => setResourceConsent(null)}
+              >
+                Cancel
+              </button>
+              <button className="primary-button" type="button" onClick={confirmResourceUse}>
+                Continue anyway
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
       <a className="skip-link" href="#workspace">Skip to Private Workspace</a>
       <header className="topbar">
         <div className="brand-lockup">
@@ -805,8 +902,8 @@ export function App() {
               <strong>Automatic text recovery</strong>
               <p>
                 Recommended and on by default. Bundled English + German OCR covers every PDF page
-                without usable text in ordinary books. Exceptionally large jobs remain bounded to
-                {' '}{SECURITY_POLICY.maxOcrPages} textless pages; EPUB and FB2 text is left unchanged.
+                without usable text in ordinary books. Jobs beyond the normal {SECURITY_POLICY.maxOcrPages}-page
+                budget ask before switching to extended local processing. EPUB and FB2 text is left unchanged.
               </p>
             </div>
             <label className="switch">
@@ -898,7 +995,7 @@ export function App() {
                       <div className={`inline-notice ${ocrEnabled ? 'is-positive' : ''}`}>
                         {ocrEnabled
                           ? inspection.ocrWithinBudget === false
-                            ? `${imageOnlyPages.toLocaleString('en-US')} textless pages detected. This exceptionally large OCR job may reach its page or pixel safety budget; any later pages remain visual and are reported explicitly.`
+                            ? `${imageOnlyPages.toLocaleString('en-US')} textless pages detected. Starting this exceptionally large OCR job requires confirmation and enables the extended local resource budget.`
                             : `${imageOnlyPages.toLocaleString('en-US')} textless ${imageOnlyPages === 1 ? 'page' : 'pages'} detected. Automatic local text recovery will cover ${imageOnlyPages === 1 ? 'it' : 'all of them'} during preparation.`
                           : `${imageOnlyPages.toLocaleString('en-US')} textless ${imageOnlyPages === 1 ? 'page will' : 'pages will'} remain visual-only because automatic recovery is off.`}
                       </div>
@@ -959,7 +1056,7 @@ export function App() {
                           )}
                           <span><strong>{formatBytes(job.result.summary.outputBytes)}</strong>ZIP</span>
                         </div>
-                        <button type="button" onClick={() => void saveArchive(job.result.archive, job.result.filename)}>
+                        <button type="button" onClick={() => void requestJobSave(job)}>
                           <SaveIcon /> Save as…
                         </button>
                         {job.result.summary.warnings.length > 0 && (
@@ -1004,10 +1101,10 @@ export function App() {
           <div className="security-intro">
             <p className="section-label">Threat Model</p>
             <h2 id="security-title">Distrust is<br />a feature.</h2>
-            <p>Every book gets a disposable worker, strict resource budget, explicit output contract, and verifiable manifest.</p>
+            <p>Every book gets a disposable worker, explicit resource consent, a strict output contract, and a verifiable manifest.</p>
           </div>
           <article><span>01</span><h3>Isolated jobs</h3><p>Preflight, conversion, and automatic OCR stay outside the UI and can be terminated independently.</p></article>
-          <article><span>02</span><h3>Bounded resources</h3><p>Paths, archives, pages, pixels, OCR work, output size, and runtime all have hard limits.</p></article>
+          <article><span>02</span><h3>Informed resources</h3><p>Large legitimate jobs can continue after a clear warning; structural anti-abuse boundaries remain enforced.</p></article>
           <article><span>03</span><h3>Passive outputs</h3><p>Scripts, forms, remote sources, attachments, and active markup never enter the prepared bundle.</p></article>
         </section>
       </main>

@@ -1,7 +1,7 @@
 import { basename, extname, isAbsolute } from 'node:path'
 
 export const APP_ORIGIN = 'bookrefinery://app'
-export const MAX_NATIVE_SAVE_BYTES = 2 * 1024 * 1024 * 1024
+export const MAX_NATIVE_SAVE_BYTES = (4 * 1024 * 1024 * 1024) - (1024 * 1024)
 export const MAX_NATIVE_SOURCE_PATH_CHARS = 32_767
 export const MAX_NATIVE_SOURCE_NAME_CHARS = 255
 

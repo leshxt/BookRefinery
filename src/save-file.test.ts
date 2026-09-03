@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MAX_PREPARED_SAVE_BYTES, savePreparedFile } from './save-file'
+import { savePreparedFile } from './save-file'
 
 describe('savePreparedFile', () => {
   it('uses the narrow native save bridge before browser download APIs', async () => {
@@ -41,9 +41,5 @@ describe('savePreparedFile', () => {
     expect(receivedData).not.toBe(source.buffer)
     if (!receivedData) throw new Error('The native save bridge did not receive the prepared bytes.')
     expect(Array.from(new Uint8Array(receivedData))).toEqual([1, 2])
-  })
-
-  it('uses a separate two GiB limit for deliberate save operations', () => {
-    expect(MAX_PREPARED_SAVE_BYTES).toBe(2 * 1024 * 1024 * 1024)
   })
 })

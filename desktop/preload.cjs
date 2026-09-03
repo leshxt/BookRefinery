@@ -1,6 +1,6 @@
 const { contextBridge, ipcRenderer, webUtils } = require('electron')
 
-const MAX_SAVE_BYTES = 2 * 1024 * 1024 * 1024
+const MAX_SAVE_BYTES = (4 * 1024 * 1024 * 1024) - (1024 * 1024)
 
 contextBridge.exposeInMainWorld('bookRefineryDesktop', {
   resolveSelectedFileName: (file) => {

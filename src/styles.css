@@ -288,6 +288,15 @@ main { padding-bottom: 90px; }
 .save-notice { margin: 10px 0 0; padding: 10px 12px; border-radius: 9px; color: #c7ddd3; background: rgba(88,240,177,.06); font-size: .72rem; line-height: 1.45; }
 .save-notice-fallback { color: #d7c79f; background: rgba(201,158,58,.08); }
 .save-notice-error { color: #e1aaa5; background: rgba(145,44,39,.12); }
+.resource-dialog-backdrop { position: fixed; inset: 0; z-index: 1000; display: grid; place-items: center; padding: 24px; background: rgba(2,8,6,.82); backdrop-filter: blur(8px); }
+.resource-dialog { width: min(620px, 100%); max-height: min(760px, calc(100vh - 48px)); overflow: auto; padding: 30px; border: 1px solid rgba(88,240,177,.24); border-radius: 20px; background: #0b1814; color: #edf9f3; box-shadow: 0 28px 90px rgba(0,0,0,.55); }
+.resource-dialog-kicker { color: #e7c87b; font-size: .7rem; font-weight: 760; letter-spacing: .12em; text-transform: uppercase; }
+.resource-dialog h2 { margin: 10px 0 12px; font-size: clamp(1.35rem, 3vw, 1.9rem); line-height: 1.15; }
+.resource-dialog p, .resource-dialog li { color: #b8cbc2; font-size: .85rem; line-height: 1.6; }
+.resource-dialog ul { margin: 18px 0; padding-left: 20px; }
+.resource-dialog-note { padding: 12px 14px; border-radius: 10px; background: rgba(88,240,177,.06); }
+.resource-dialog-actions { display: grid; grid-template-columns: 1fr 1.4fr; gap: 10px; margin-top: 22px; }
+.resource-dialog-actions .primary-button, .resource-dialog-actions .secondary-button { width: 100%; }
 
 .security-grid { display: grid; grid-template-columns: 1.25fr repeat(3, 1fr); gap: 1px; margin-top: 90px; border: 1px solid var(--line); border-radius: 22px; overflow: hidden; background: var(--line); }
 .security-grid > * { min-height: 270px; padding: 30px; background: #0a1512; }

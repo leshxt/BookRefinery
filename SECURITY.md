@@ -28,8 +28,9 @@ The latest full review is documented in
 - Every permission request and check is denied. New windows and navigation are blocked; only exact
   BookRefinery/author GitHub links may be handed to the user's external browser after an explicit click.
 - The only native renderer bridge is `bookrefinery:save-file`. Both preload and main process validate
-  a generated ZIP, enforce the 300 MB output limit, restrict the suggested name to a safe basename,
-  validate the IPC sender, and show an operating-system Save As dialog before writing.
+  a generated ZIP, enforce the classic ZIP format's technical 4 GB ceiling, restrict the suggested
+  name to a safe basename, validate the IPC sender, and show an operating-system Save As dialog before
+  writing. The renderer requires explicit user confirmation above the normal 2 GB save budget.
 - Electron fuses disable `RunAsNode`, `NODE_OPTIONS`, and CLI inspection, require the packaged ASAR,
   validate embedded ASAR integrity, and enable cookie encryption.
 - The service worker is not registered inside the desktop edition. There is no updater, telemetry,
@@ -43,7 +44,9 @@ The latest full review is documented in
 
 - Preflight and conversion run in disposable Web Workers. Ordinary conversion has a 120-second
   watchdog; automatic OCR has a separate bounded timeout because language initialization is heavier.
-- Input is capped at 80 MB and generated output at 300 MB.
+  Confirmed extended jobs remain cancellable and may use a 12-hour worker window.
+- Input remains capped at 80 MB. Generated PDF packages may use up to 3 GB before the technical
+  output boundary stops them; saves above 2 GB require explicit confirmation.
 - A queue may contain up to 100 books, but each item is processed sequentially in its own disposable
   worker and receives the same independent input, output, and runtime limits.
 - Untrusted HTML/Markdown is never rendered; the UI preview is plain text.
@@ -103,8 +106,10 @@ The latest full review is documented in
 - PDFs that require a password pause before preflight and request it locally. The password is bounded,
   kept only in volatile memory, sent solely to the disposable worker for that file, and cleared after
   the job. It is never written to reports, manifests, logs, or prepared outputs.
-- Up to 500 pages and 480 million total output pixels may be rendered into the sanitized companion.
-  Individual source images are capped at 20 million pixels and temporary canvases at 64 MB.
+- The normal sanitized-companion budget is 500 pages and 480 million total output pixels. Exceeding
+  it pauses before conversion. Explicit confirmation raises this to the PDF-wide 2,000-page boundary
+  and 1.5 billion output pixels. Individual source images remain capped at 20 million pixels and
+  temporary canvases at 64 MB.
 - Annotation rendering is disabled. Forms, links, attachments, annotations and JavaScript are not copied.
 - Every page is flattened to a high-quality JPEG and embedded in a newly created PDF, then paired with
   an invisible selectable Unicode layer whose runs are aligned to their original page coordinates. Search
@@ -116,9 +121,11 @@ The latest full review is documented in
   repaired page and character counts are written to the security report.
 - Automatic OCR is enabled by default and runs only on pages without useful extracted text. English and German worker, core and
   language assets ship with the app and are loaded from the same origin; no OCR service or CDN is used.
-- Preflight checks every page for a usable text layer. OCR is capped at 500 textless pages,
+- Preflight checks every page for a usable text layer. The normal OCR budget is 500 textless pages,
   4.5 million pixels per page and 1.5 billion rendered pixels in total, with a separate 60-minute
-  worker timeout. Recovered text enters the normal Markdown and sanitized PDF text layers.
+  worker timeout. Explicit confirmation raises the per-book totals to 2,000 pages and 9 billion
+  pixels with a 12-hour cancellable worker window. The per-page canvas boundary is never relaxed.
+  Recovered text enters the normal Markdown and sanitized PDF text layers.
 
 ## Known limitations
 

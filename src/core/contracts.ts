@@ -7,6 +7,7 @@ export type OutputSelectionId = typeof OUTPUT_SELECTION_IDS[number]
 export type DocumentFormat = 'epub' | 'fb2' | 'pdf'
 export type OcrLanguage = 'eng' | 'deu'
 export type RepairLevel = 'automatic' | 'salvage'
+export type ResourceMode = 'standard' | 'extended'
 
 export interface DocumentRepairSummary {
   readonly level: RepairLevel
@@ -19,6 +20,7 @@ export interface DocumentRepairSummary {
 export interface ConversionOptions {
   readonly profile: OutputModeId
   readonly outputs: readonly OutputSelectionId[]
+  readonly resourceMode: ResourceMode
   readonly ocr: {
     readonly enabled: boolean
     readonly languages: readonly OcrLanguage[]
@@ -62,6 +64,7 @@ export interface DocumentInspection {
   readonly textCoverage: 'full' | 'partial' | 'none' | 'unknown'
   readonly checkedPages?: number
   readonly imageOnlyPages?: number
+  readonly estimatedVisualPixels?: number
   readonly estimatedOcrPixels?: number
   readonly ocrWithinBudget?: boolean
   readonly passwordProtected?: boolean
@@ -136,6 +139,7 @@ export const OUTPUT_SELECTIONS = [
 export const DEFAULT_CONVERSION_OPTIONS: ConversionOptions = {
   profile: 'archive',
   outputs: ['visual-source', 'markdown', 'chunks', 'assets'],
+  resourceMode: 'standard',
   ocr: {
     enabled: true,
     languages: ['eng', 'deu'],

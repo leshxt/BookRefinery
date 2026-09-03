@@ -24,6 +24,7 @@ function isConversionOptions(value: unknown): value is ConversionOptions {
   const outputs = candidate['outputs']
   if (
     !(candidate['profile'] === 'custom' || OUTPUT_PROFILE_IDS.includes(candidate['profile'] as never)) ||
+    !(candidate['resourceMode'] === 'standard' || candidate['resourceMode'] === 'extended') ||
     !Array.isArray(outputs) ||
     outputs.length === 0 ||
     !outputs.every((output) => OUTPUT_SELECTION_IDS.includes(output as never)) ||

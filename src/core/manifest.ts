@@ -3,7 +3,7 @@ import type { ConversionResult } from './convert'
 import type { ConversionOptions, OutputSelectionId } from './contracts'
 import { SecurityError } from './errors'
 import { safeOutputName } from './path'
-import { SECURITY_POLICY } from './policy'
+import { conversionResourcePolicy } from './policy'
 
 const FIXED_ARCHIVE_DATE = new Date('2026-01-01T00:00:00Z')
 
@@ -121,7 +121,7 @@ function outputFilename(titleStem: string, profile: ConversionOptions['profile']
 
 export async function packageConversionResult(
   result: ConversionResult,
-  options: Pick<ConversionOptions, 'profile' | 'outputs'>,
+  options: Pick<ConversionOptions, 'profile' | 'outputs' | 'resourceMode'>,
 ): Promise<ConversionResult> {
   const unpacked = unzipSync(result.archive)
   const titleStem = safeOutputName(result.summary.title, 'Untitled book')
@@ -167,7 +167,7 @@ export async function packageConversionResult(
   files[manifestPath] = strToU8(`${JSON.stringify(manifest, null, 2)}\n`)
 
   const archive = zipSync(files, { level: 6, mtime: FIXED_ARCHIVE_DATE })
-  if (archive.byteLength > SECURITY_POLICY.maxOutputBytes) {
+  if (archive.byteLength > conversionResourcePolicy(options.resourceMode).maxOutputBytes) {
     throw new SecurityError('LIMIT_EXCEEDED', 'The selected outputs exceed the output size limit.')
   }
 

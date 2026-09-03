@@ -27,8 +27,8 @@ describe('desktop security policy', () => {
     assert.equal(isAllowedExternalLink('https://github.com.evil.invalid/leshxt'), false)
   })
 
-  it('accepts only bounded ZIP saves with a basename', () => {
-    assert.equal(MAX_NATIVE_SAVE_BYTES, 2 * 1024 * 1024 * 1024)
+  it('accepts non-empty ZIP saves up to the technical ZIP boundary', () => {
+    assert.equal(MAX_NATIVE_SAVE_BYTES, (4 * 1024 * 1024 * 1024) - (1024 * 1024))
     assert.equal(safeSaveFilename('book-refined.zip'), 'book-refined.zip')
     assert.equal(safeSaveFilename('../book.zip'), null)
     assert.equal(safeSaveFilename('book.pdf'), null)

@@ -1,3 +1,5 @@
+import type { ResourceMode } from './contracts'
+
 export const SECURITY_POLICY = {
   maxInputBytes: 80 * 1024 * 1024,
   maxEntries: 5_000,
@@ -17,6 +19,7 @@ export const SECURITY_POLICY = {
   maxPdfPageTextBytes: 2 * 1024 * 1024,
   maxVisualPdfPages: 500,
   maxVisualPdfPixels: 480_000_000,
+  minVisualPdfScale: 0.85,
   maxPdfSourceImagePixels: 20_000_000,
   maxPdfPasswordLength: 1_024,
   maxBatchFiles: 100,
@@ -31,6 +34,39 @@ export const SECURITY_POLICY = {
   inspectionTimeoutMs: 120_000,
   ocrWorkerTimeoutMs: 3_600_000,
 } as const
+
+export interface ConversionResourcePolicy {
+  readonly maxOutputBytes: number
+  readonly maxVisualPdfPages: number
+  readonly maxVisualPdfPixels: number
+  readonly maxOcrPages: number
+  readonly maxOcrPixels: number
+  readonly workerTimeoutMs: number
+}
+
+export const EXTENDED_RESOURCE_POLICY = {
+  maxOutputBytes: 3 * 1024 * 1024 * 1024,
+  maxVisualPdfPages: SECURITY_POLICY.maxPdfPages,
+  maxVisualPdfPixels: 1_500_000_000,
+  maxOcrPages: SECURITY_POLICY.maxPdfPages,
+  maxOcrPixels: 9_000_000_000,
+  workerTimeoutMs: 12 * 60 * 60 * 1_000,
+} as const satisfies ConversionResourcePolicy
+
+export const LARGE_SAVE_WARNING_BYTES = 2 * 1024 * 1024 * 1024
+export const MAX_COMBINED_ZIP_BYTES = (4 * 1024 * 1024 * 1024) - (1024 * 1024)
+
+export function conversionResourcePolicy(mode: ResourceMode): ConversionResourcePolicy {
+  if (mode === 'extended') return EXTENDED_RESOURCE_POLICY
+  return {
+    maxOutputBytes: EXTENDED_RESOURCE_POLICY.maxOutputBytes,
+    maxVisualPdfPages: SECURITY_POLICY.maxVisualPdfPages,
+    maxVisualPdfPixels: SECURITY_POLICY.maxVisualPdfPixels,
+    maxOcrPages: SECURITY_POLICY.maxOcrPages,
+    maxOcrPixels: SECURITY_POLICY.maxOcrPixels,
+    workerTimeoutMs: SECURITY_POLICY.workerTimeoutMs,
+  }
+}
 
 export function formatBytes(bytes: number): string {
   if (!Number.isFinite(bytes) || bytes < 0) return '-'

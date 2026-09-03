@@ -66,6 +66,7 @@
     "vitest": "4.1.10"
   },
   "overrides": {
+    "@xmldom/xmldom": "0.8.15",
     "brace-expansion": "5.0.9",
     "fast-uri": "3.1.6",
     "tar": "7.5.22"
