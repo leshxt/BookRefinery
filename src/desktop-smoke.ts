@@ -50,6 +50,7 @@ export async function runDesktopPdfSmokeTest(): Promise<{
     {
       profile: 'notebooklm',
       outputs: ['visual-source'],
+      resourceMode: 'standard',
       ocr: { enabled: false, languages: ['eng', 'deu'] },
     },
   )

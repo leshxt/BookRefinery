@@ -1,6 +1,6 @@
 import type { ConversionProgress, ConversionResult, ConversionSummary } from '../core/convert'
 import type { ConversionOptions, DocumentInspection } from '../core/contracts'
-import { SECURITY_POLICY } from '../core/policy'
+import { conversionResourcePolicy, SECURITY_POLICY } from '../core/policy'
 import type { SecurityErrorCode } from '../core/errors'
 import type { WorkerRequest, WorkerResponse } from './protocol'
 
@@ -120,9 +120,11 @@ export async function runConversion(
       reject(new DOMException('Conversion cancelled.', 'AbortError'))
     }
 
-    const timeoutMs = options.ocr.enabled && sourceName.toLocaleLowerCase('en-US').endsWith('.pdf')
-      ? SECURITY_POLICY.ocrWorkerTimeoutMs
-      : SECURITY_POLICY.workerTimeoutMs
+    const timeoutMs = options.resourceMode === 'extended'
+      ? conversionResourcePolicy('extended').workerTimeoutMs
+      : options.ocr.enabled && sourceName.toLocaleLowerCase('en-US').endsWith('.pdf')
+        ? SECURITY_POLICY.ocrWorkerTimeoutMs
+        : SECURITY_POLICY.workerTimeoutMs
     const timeout = globalThis.setTimeout(() => {
       if (settled) return
       cleanup()

@@ -35,6 +35,13 @@ declare global {
 }
 
 function exactArrayBuffer(data: Uint8Array): ArrayBuffer {
+  if (
+    data.buffer instanceof ArrayBuffer &&
+    data.byteOffset === 0 &&
+    data.byteLength === data.buffer.byteLength
+  ) {
+    return data.buffer
+  }
   const buffer = new ArrayBuffer(data.byteLength)
   new Uint8Array(buffer).set(data)
   return buffer

@@ -83,11 +83,12 @@ language data, the Tesseract WebAssembly runtime, and its worker are bundled wit
 no model or language file is downloaded from a CDN. OCR text is written into the normal Markdown
 and position-aligned selectable PDF layers, so it does not become a disconnected duplicate source.
 
-Preflight checks every PDF page and reports the exact number that needs OCR. Ordinary books are
-processed completely; unusually large jobs remain bounded to 500 textless pages, 1.5 billion rendered
-pixels in total, 4.5 million pixels per page, and a separate 60-minute worker timeout. Recognition is
-probabilistic: verify important passages against the preserved page image. The security report records
-OCR pages and any limit or initialization warning.
+Preflight checks every PDF page and reports the exact number that needs OCR. Ordinary processing uses
+a 500-page visual/OCR budget. Larger legitimate books trigger a local confirmation dialog instead of
+silently losing the sanitized PDF; after confirmation, BookRefinery enables an extended budget of up
+to 2,000 visual and OCR pages, 1.5 billion visual pixels, 9 billion OCR pixels, and a 12-hour cancellable
+worker window. Recognition is probabilistic: verify important passages against the preserved page
+image. The security report records the selected resource mode, OCR pages, and remaining technical limits.
 
 ## Password PDFs
 
@@ -128,7 +129,8 @@ The desktop edition bundles its own current Electron/Chromium runtime instead of
 WebView2. Its private renderer session denies every remote request, DNS is mapped to failure,
 background networking and component updates are disabled, and there is no app updater, telemetry,
 remote code, or backend. The only native renderer bridge opens a user-triggered **Save As** dialog
-for a bounded generated ZIP. Document parsing still runs in the same disposable sandboxed workers.
+for a validated generated ZIP. Saves above 2 GB require explicit confirmation and remain bounded by
+the ZIP format's technical 4 GB ceiling. Document parsing still runs in disposable sandboxed workers.
 
 This makes the installer larger than the former WebView wrapper, but it gives BookRefinery control
 over the exact runtime and removes the observed WebView2 configuration request. The initial community
@@ -170,8 +172,9 @@ packages without publishing a release.
 BookRefinery treats every input as hostile:
 
 - preflight and conversion run in disposable workers;
-- ordinary conversion has a 120-second watchdog; automatic OCR has a separate bounded timeout;
-- every batch item receives independent path, archive, page, pixel, text, and output limits;
+- ordinary conversion has a 120-second watchdog; confirmed large jobs use a cancellable extended window;
+- large visual, OCR, and save operations require explicit resource consent;
+- every batch item still receives independent structural path, archive, page, pixel, text, and output boundaries;
 - archive repair is bounded, CRC-verified, documented, and never bypasses a security rejection;
 - ZIP paths, entry counts, sizes, compression ratios, XML entities, and DTDs are checked;
 - PDF.js receives local bytes only; fetching, XFA, browser decoders, system fonts, and annotations

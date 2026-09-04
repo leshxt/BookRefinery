@@ -24,7 +24,11 @@ import { LocalOcrSession, type OcrRecognition } from './ocr'
 import { safeOutputName } from './path'
 import { repairPdfTextItems } from './pdf-font-repair'
 import { extractStructuredPageText } from './pdf-layout'
-import { SECURITY_POLICY } from './policy'
+import {
+  conversionResourcePolicy,
+  SECURITY_POLICY,
+  type ConversionResourcePolicy,
+} from './policy'
 import { SearchablePdfBuilder, type SearchableTextRun } from './visual-pdf'
 import { isRecord } from './xml'
 
@@ -124,10 +128,13 @@ export interface PdfRenderPlan {
   readonly jpegQuality: number
 }
 
-export function pdfRenderPlan(geometry: readonly PageGeometry[]): PdfRenderPlan | null {
+export function pdfRenderPlan(
+  geometry: readonly PageGeometry[],
+  maxPixels: number = SECURITY_POLICY.maxVisualPdfPixels,
+): PdfRenderPlan | null {
   const basePixels = geometry.reduce((sum, page) => sum + page.width * page.height, 0)
-  const scale = Math.min(2.2, Math.sqrt(SECURITY_POLICY.maxVisualPdfPixels / Math.max(basePixels, 1)))
-  if (scale < 0.85) return null
+  const scale = Math.min(2.2, Math.sqrt(maxPixels / Math.max(basePixels, 1)))
+  if (scale < SECURITY_POLICY.minVisualPdfScale) return null
   const jpegQuality = geometry.length <= 40
     ? 0.96
     : geometry.length <= 180
@@ -330,7 +337,12 @@ function metadataText(info: unknown, key: string): string | undefined {
   return typeof value === 'string' ? safePlainText(value) || undefined : undefined
 }
 
-function reportMarkdown(summary: ConversionSummary, sourceName: string): string {
+function reportMarkdown(
+  summary: ConversionSummary,
+  sourceName: string,
+  resourceMode: ConversionOptions['resourceMode'],
+  resourcePolicy: ConversionResourcePolicy,
+): string {
   const preparationWarnings = summary.warnings.length > 0
     ? summary.warnings.map((warning) => `- ${safeMarkdownText(warning)}`).join('\n')
     : '- None.'
@@ -356,14 +368,17 @@ function reportMarkdown(summary: ConversionSummary, sourceName: string): string 
 
 - Input: 80 MB
 - Text extraction pages: 2,000
-- Sanitized companion pages: 500
-- Sanitized companion pixel budget: 480 million
+- Resource mode: ${resourceMode}
+- Sanitized companion pages: ${resourcePolicy.maxVisualPdfPages.toLocaleString('en-US')}
+- Sanitized companion pixel budget: ${(resourcePolicy.maxVisualPdfPixels / 1_000_000).toLocaleString('en-US')} million
 - Individual decoded source image: 20 million pixels
 - Extracted text per page: 2 MB
 - Total extracted text: 30 MB
-- OCR pages: ${SECURITY_POLICY.maxOcrPages.toLocaleString('en-US')}
-- OCR pixels: ${(SECURITY_POLICY.maxOcrPixels / 1_000_000_000).toFixed(1)} billion in total; ${(SECURITY_POLICY.maxOcrPagePixels / 1_000_000).toFixed(1)} million per page
-- Isolated conversion worker: ${Math.round(SECURITY_POLICY.workerTimeoutMs / 1_000)} seconds; full-book OCR: ${Math.round(SECURITY_POLICY.ocrWorkerTimeoutMs / 60_000)} minutes
+- OCR pages: ${resourcePolicy.maxOcrPages.toLocaleString('en-US')}
+- OCR pixels: ${(resourcePolicy.maxOcrPixels / 1_000_000_000).toFixed(1)} billion in total; ${(SECURITY_POLICY.maxOcrPagePixels / 1_000_000).toFixed(1)} million per page
+- Isolated conversion worker: ${resourceMode === 'extended'
+    ? `up to ${Math.round(resourcePolicy.workerTimeoutMs / 60_000)} minutes after confirmation`
+    : `${Math.round(SECURITY_POLICY.workerTimeoutMs / 60_000)} minutes normally; ${Math.round(SECURITY_POLICY.ocrWorkerTimeoutMs / 60_000)} minutes with OCR`}
 
 ## Preparation warnings
 
@@ -450,11 +465,12 @@ async function renderSearchablePdf(
   title: string,
   author: string | undefined,
   onProgress: ProgressReporter,
+  resourcePolicy: ConversionResourcePolicy,
   password?: string,
 ): Promise<Uint8Array | undefined> {
   if (typeof OffscreenCanvas === 'undefined') return undefined
-  if (geometry.length > SECURITY_POLICY.maxVisualPdfPages) return undefined
-  const plan = pdfRenderPlan(geometry)
+  if (geometry.length > resourcePolicy.maxVisualPdfPages) return undefined
+  const plan = pdfRenderPlan(geometry, resourcePolicy.maxVisualPdfPixels)
   if (!plan) return undefined
   if (geometry.some((page) => page.width * plan.scale > 16_384 || page.height * plan.scale > 16_384)) {
     return undefined
@@ -521,6 +537,7 @@ export async function convertPdf(
   password?: string,
 ): Promise<ConversionResult> {
   assertPasswordLength(password)
+  const resourcePolicy = conversionResourcePolicy(options.resourceMode)
   const inputBytes = bytes.byteLength
   let ocrSession: LocalOcrSession | null = null
   onProgress({ percent: 8, label: 'Checking the PDF structure in isolation' })
@@ -597,11 +614,11 @@ export async function convertPdf(
       if (!plain && options.ocr.enabled && !ocrUnavailable) {
         if (typeof OffscreenCanvas === 'undefined') {
           ocrLimitReason = 'runtime'
-        } else if (ocrAttempts >= SECURITY_POLICY.maxOcrPages) {
+        } else if (ocrAttempts >= resourcePolicy.maxOcrPages) {
           ocrLimitReason = 'pages'
         } else {
           const basePixels = viewport.width * viewport.height
-          const remainingPixels = SECURITY_POLICY.maxOcrPixels - ocrPixels
+          const remainingPixels = resourcePolicy.maxOcrPixels - ocrPixels
           const scale = Math.min(
             2.2,
             Math.sqrt(SECURITY_POLICY.maxOcrPagePixels / Math.max(basePixels, 1)),
@@ -672,7 +689,7 @@ export async function convertPdf(
     }
 
     if (ocrLimitReason === 'pages') {
-      warnings.push(`Automatic text recovery stopped at the ${SECURITY_POLICY.maxOcrPages}-page safety limit; remaining pages stayed visual-only.`)
+      warnings.push(`Automatic text recovery stopped at the ${resourcePolicy.maxOcrPages}-page limit for the selected resource mode; remaining pages stayed visual-only.`)
     } else if (ocrLimitReason === 'pixels') {
       warnings.push('Automatic text recovery stopped at the per-book pixel safety limit; remaining pages stayed visual-only.')
     } else if (ocrLimitReason === 'runtime') {
@@ -685,9 +702,9 @@ export async function convertPdf(
     const outlineSections = await readOutlineSections(document)
     let searchablePdf: Uint8Array | undefined
     if (selectionNeedsVisualCompanion(options.outputs, 'pdf')) {
-      if (document.numPages > SECURITY_POLICY.maxVisualPdfPages) {
-        warnings.push(`The sanitized PDF was not produced because the document exceeds the ${SECURITY_POLICY.maxVisualPdfPages}-page visual limit; Markdown text is still available.`)
-      } else if (!pdfRenderPlan(pageGeometry)) {
+      if (document.numPages > resourcePolicy.maxVisualPdfPages) {
+        warnings.push(`The sanitized PDF was not produced because the document exceeds the ${resourcePolicy.maxVisualPdfPages.toLocaleString('en-US')}-page technical limit for the selected resource mode; Markdown text is still available.`)
+      } else if (!pdfRenderPlan(pageGeometry, resourcePolicy.maxVisualPdfPixels)) {
         warnings.push('The sanitized PDF was not produced because rendering every page would exceed the adaptive visual pixel budget; Markdown text is still available.')
       } else if (typeof OffscreenCanvas === 'undefined') {
         warnings.push('This browser does not provide OffscreenCanvas, so the sanitized PDF could not be produced; Markdown text is still available.')
@@ -700,6 +717,7 @@ export async function convertPdf(
             title,
             author,
             onProgress,
+            resourcePolicy,
             password,
           )
           if (!searchablePdf) warnings.push('The sanitized PDF could not be produced within the safe rendering limits; Markdown text is still available.')
@@ -743,7 +761,12 @@ export async function convertPdf(
       'document.md': strToU8(markdown),
       'notebooklm/document.md': strToU8(markdown),
       'notebooklm/README.md': strToU8(notebookReadme(title)),
-      'SECURITY-REPORT.md': strToU8(reportMarkdown(provisionalSummary, sourceName)),
+      'SECURITY-REPORT.md': strToU8(reportMarkdown(
+        provisionalSummary,
+        sourceName,
+        options.resourceMode,
+        resourcePolicy,
+      )),
     }
     if (searchablePdf) files['notebooklm/document.sanitized.pdf'] = searchablePdf
     for (const page of pageSections) {
@@ -770,7 +793,7 @@ export async function convertPdf(
 
     onProgress({ percent: 94, label: 'Building the searchable PDF and Markdown bundle' })
     const resultArchive = zipSync(files, { level: 6, mtime: new Date('2026-01-01T00:00:00Z') })
-    if (resultArchive.byteLength > SECURITY_POLICY.maxOutputBytes) {
+    if (resultArchive.byteLength > resourcePolicy.maxOutputBytes) {
       throw new SecurityError('LIMIT_EXCEEDED', 'The export bundle exceeds the output size limit.')
     }
 
@@ -864,10 +887,13 @@ export async function inspectPdf(
       info = undefined
     }
     let imageOnlyPages = 0
+    let estimatedVisualPixels = 0
     let estimatedOcrPixels = 0
     let repairedPages = 0
     for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
       const page = await document.getPage(pageNumber)
+      const viewport = page.getViewport({ scale: 1 })
+      estimatedVisualPixels += Math.max(1, viewport.width * viewport.height)
       const textContent = await page.getTextContent({ disableNormalization: false })
       const repaired = await repairedPageItems(page, textContent.items)
       if (repaired.repairedGlyphs > 0) repairedPages += 1
@@ -875,7 +901,6 @@ export async function inspectPdf(
         isRecord(item) && typeof item['str'] === 'string' && item['str'].trim().length > 0)
       if (!hasText) {
         imageOnlyPages += 1
-        const viewport = page.getViewport({ scale: 1 })
         const basePixels = Math.max(1, viewport.width * viewport.height)
         const scale = Math.min(
           2.2,
@@ -914,6 +939,7 @@ export async function inspectPdf(
       textCoverage,
       checkedPages: document.numPages,
       imageOnlyPages,
+      estimatedVisualPixels,
       estimatedOcrPixels,
       ocrWithinBudget:
         imageOnlyPages <= SECURITY_POLICY.maxOcrPages &&
